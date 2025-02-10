@@ -1,0 +1,19 @@
+audit: # Configurations for auditing
+  random_seed: 42 # Integer specifying the random seed
+  attack_list: {} # TODO: Ensemble MIA (Shachor et al. 2023)
+
+  output_dir: "./leakpro_output"
+  attack_type: "mia" #mia, gia
+  modality: "time_series" #image, tabular, time_series
+
+target:
+  # Target model path
+  module_path: "./utils/model_preparation.py"
+  model_class: "SimpleLSTM"
+  # Data paths
+  target_folder: "./target"
+  data_path: "./data/ECG_E00001.pkl"
+
+shadow_model:
+
+distillation_model:
