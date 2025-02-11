@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 
 import numpy as np
+from numpy.fft import fft
+from numpy.linalg import norm
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SequentialSampler
 from tqdm import tqdm
@@ -250,3 +252,58 @@ class HopSkipJumpDistance(Signal):
                                                     )
 
         return perturbed_imgs, perturbed_distance
+    
+def get_seasonality_coefficients(Y):
+    Z = fft(Y, axis=2) # column-wise 1D-DFT over variables
+    C = fft(Z, axis=1) # row-wise 1D-DFT over horizon
+    return C
+
+class SeasonalityLoss(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the seasonality loss of a time-series model output.
+    We define this as the distance (L2 norm) between the true and predicted values for the seasonality component.
+    """
+
+    def __call__(
+        self:Self,
+        models: List[Model],
+        handler: AbstractInputHandler,
+        indices: np.ndarray,
+        batch_size: int = 32,
+    ) -> List[np.ndarray]:
+        """Built-in call method.
+
+        Args:
+        ----
+            models: List of models that can be queried.
+            handler: The input handler object.
+            indices: List of indices in population dataset that can be queried from handler.
+            batch_size: Integer to determine batch size for dataloader.
+
+        Returns:
+        -------
+            The signal value.
+
+        """
+        # Compute the signal for each model
+        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
+
+        results = []
+        for m, model in enumerate(models):
+            # Initialize a matrix to store the seasonality loss for the current model
+            model_seasonality_loss = []
+
+            for data, target in tqdm(data_loader, desc=f"Getting seasonality for model {m+1}/ {len(models)}"):
+                # Get the output seasonality and compute L2 norm wrt true seasonality
+                output = model.get_logits(data)
+                seasonality_pred = get_seasonality_coefficients(output)
+                seasonality_true = get_seasonality_coefficients(target)
+                seasonality_loss = norm(seasonality_true - seasonality_pred, axis=(1, 2))
+                model_seasonality_loss.extend(seasonality_loss)
+
+            model_seasonality_loss = np.array(model_seasonality_loss)
+            results.append(model_seasonality_loss)
+
+        return results
