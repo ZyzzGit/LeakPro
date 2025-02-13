@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 from numpy.fft import fft
-from numpy.linalg import norm
+from numpy.linalg import inv, norm
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SequentialSampler
 from tqdm import tqdm
@@ -295,7 +295,7 @@ class SeasonalityLoss(Signal):
             # Initialize a matrix to store the seasonality loss for the current model
             model_seasonality_loss = []
 
-            for data, target in tqdm(data_loader, desc=f"Getting seasonality for model {m+1}/ {len(models)}"):
+            for data, target in tqdm(data_loader, desc=f"Getting seasonality loss for model {m+1}/ {len(models)}"):
                 # Get the output seasonality and compute L2 norm wrt true seasonality
                 output = model.get_logits(data)
                 seasonality_pred = get_seasonality_coefficients(output)
@@ -305,5 +305,62 @@ class SeasonalityLoss(Signal):
 
             model_seasonality_loss = np.array(model_seasonality_loss)
             results.append(model_seasonality_loss)
+
+        return results
+    
+def get_trend_coefficients(Y, polynomial_degree=4):
+    horizon = Y.shape[1]
+    t = np.arange(horizon) / horizon
+    P = np.vander(t, polynomial_degree, increasing=True)    # Vandermonde matrix of specified degree
+    A = inv(P.T @ P) @ P.T @ Y                              # least squares solution to polynomial fit
+    return A
+    
+class TrendLoss(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the trend loss of a time-series model output.
+    We define this as the distance (L2 norm) between the true and predicted values for the trend component.
+    """
+
+    def __call__(
+        self:Self,
+        models: List[Model],
+        handler: AbstractInputHandler,
+        indices: np.ndarray,
+        batch_size: int = 32,
+    ) -> List[np.ndarray]:
+        """Built-in call method.
+
+        Args:
+        ----
+            models: List of models that can be queried.
+            handler: The input handler object.
+            indices: List of indices in population dataset that can be queried from handler.
+            batch_size: Integer to determine batch size for dataloader.
+
+        Returns:
+        -------
+            The signal value.
+
+        """
+        # Compute the signal for each model
+        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
+
+        results = []
+        for m, model in enumerate(models):
+            # Initialize a matrix to store the trend loss for the current model
+            model_trend_loss = []
+
+            for data, target in tqdm(data_loader, desc=f"Getting trend loss for model {m+1}/ {len(models)}"):
+                # Get the output trend and compute L2 norm wrt true trend
+                output = model.get_logits(data)
+                trend_pred = get_trend_coefficients(output)
+                trend_true = get_trend_coefficients(target.numpy())
+                trend_loss = norm(trend_true - trend_pred, axis=(1, 2))
+                model_trend_loss.extend(trend_loss)
+
+            model_trend_loss = np.array(model_trend_loss)
+            results.append(model_trend_loss)
 
         return results

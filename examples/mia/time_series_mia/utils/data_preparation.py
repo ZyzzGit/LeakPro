@@ -38,10 +38,13 @@ def to_sequences(data, lookback, horizon):
 def preprocess_ECG_dataset(path, lookback, horizon):
     """Get and preprocess the dataset."""
 
+    dataset = None
     if os.path.exists(os.path.join(path, "ECG_E00001.pkl")):
         with open(os.path.join(path, "ECG_E00001.pkl"), "rb") as f:
             dataset = joblib.load(f)
-    else:
+
+    time_dim_mismatch = dataset.x.shape[1] != lookback or dataset.y.shape[1] != horizon
+    if dataset is None or time_dim_mismatch:
         file = os.path.join(path, "ECG_E00001.npy")
         data = np.load(file, allow_pickle=True)
 
