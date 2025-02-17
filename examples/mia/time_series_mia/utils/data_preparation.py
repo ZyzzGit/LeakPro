@@ -20,7 +20,7 @@ class ECGDataset(Dataset):
         return len(self.x)
 
     def __getitem__(self, idx):
-        return self.x[idx], self.y[idx]
+        return self.x[idx, ...], self.y[idx, ...]
     
     def subset(self, indices):
         return ECGDataset(self.x[indices], self.y[indices])
@@ -43,8 +43,7 @@ def preprocess_ECG_dataset(path, lookback, horizon):
         with open(os.path.join(path, "ECG_E00001.pkl"), "rb") as f:
             dataset = joblib.load(f)
 
-    time_dim_mismatch = dataset.x.shape[1] != lookback or dataset.y.shape[1] != horizon
-    if dataset is None or time_dim_mismatch:
+    if dataset is None or dataset.x.shape[1] != lookback or dataset.y.shape[1] != horizon:
         file = os.path.join(path, "ECG_E00001.npy")
         data = np.load(file, allow_pickle=True)
 

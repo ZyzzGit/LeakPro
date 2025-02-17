@@ -57,4 +57,4 @@ class ECGInputHandler(AbstractInputHandler):
                 train_loss += loss.item()
 
         model.to("cpu")
-        return {"model": model, "metrics": {"loss": train_loss}}
+        return {"model": model, "metrics": {"loss": train_loss, "accuracy": None}}
