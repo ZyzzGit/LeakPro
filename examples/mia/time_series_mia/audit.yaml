@@ -14,8 +14,8 @@ audit: # Configurations for auditing
 
 target:
   # Target model path
-  module_path: "./utils/model_preparation.py"
-  model_class: "SimpleLSTM"
+  module_path: "./utils/models/TimesNet.py"
+  model_class: "TimesNet"
   # Data paths
   target_folder: "./target"
   data_path: "./data/ECG_E00001.pkl"
