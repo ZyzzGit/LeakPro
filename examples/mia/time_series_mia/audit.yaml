@@ -12,7 +12,7 @@ target:
   model_class: "SimpleLSTM"
   # Data paths
   target_folder: "./target"
-  data_path: "./data/ECG_E00001.pkl"
+  data_path: "./data/ECG.pkl"
 
 shadow_model:
 
