@@ -1,6 +1,8 @@
 """Implementation of the ensemble method from "Improving Membership Inference Attacks against Classification Models"."""
 
 import numpy as np
+from warnings import filterwarnings
+from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 from sklearn.svm import SVC
@@ -11,6 +13,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import roc_auc_score
+from sklearn.exceptions import ConvergenceWarning
+
 
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
@@ -62,6 +66,7 @@ class AttackEnsemble(AbstractMIA):
         self.attack_data_fraction = configs.get("attack_data_fraction", 0.1)
         self.audit = configs.get("audit", False)
         self.signal = TrendLoss() # Change this to be configurable
+        self.online = True
 
 
         # Define the validation dictionary as: {parameter_name: (parameter, min_value, max_value)}
@@ -102,6 +107,8 @@ class AttackEnsemble(AbstractMIA):
 
         Signals are computed on the auxiliary model(s) and dataset.
         """
+
+        filterwarnings(action='ignore', category=ConvergenceWarning)
         logger.info("Preparing shadow models for Ensemble attack")
         # Check number of shadow models that are available
 
@@ -109,15 +116,15 @@ class AttackEnsemble(AbstractMIA):
         logger.info("Preparing attack data for training the Ensemble attack")
 
         # Get all available indices for attack dataset including training and test data
-        self.attack_data_indices = self.sample_indices_from_population(include_train_indices = True,
-                                                                       include_test_indices = True)
+        self.attack_data_indices = self.sample_indices_from_population(include_train_indices = self.online,
+                                                                       include_test_indices = self.online)
         logger.info(f"{self.attack_data_indices=}")
 
         if not self.audit:
             # train shadow models
             logger.info(f"Check for {self.num_instances} shadow models (dataset: {len(self.attack_data_indices)} points)")
             self.shadow_model_indices = ShadowModelHandler().create_shadow_models(
-                num_models = self.num_shadow_models,
+                num_models = self.num_instances,
                 shadow_population = self.attack_data_indices,
                 training_fraction = self.training_data_fraction,
                 online = self.online)
@@ -138,12 +145,14 @@ class AttackEnsemble(AbstractMIA):
 
         ensemble_models = []
         for instance in range(self.num_instances):
+            logger.info(f"Running instance number {instance+1}/{self.num_instances}")
+
             # Get current shadow model
-            shadow_model = self.shadow_model_indices[instance]
+            shadow_model = self.shadow_models[instance]
 
             # Get indices which the current shadow model is trained or not trained on
-            in_indices = self.population[self.in_indices_masks[instance]]
-            out_indices = self.population[self.out_indices_masks[instance]]
+            in_indices = self.audit_dataset["data"][self.in_indices_masks[:, instance]]
+            out_indices = self.audit_dataset["data"][self.out_indices_masks[:, instance]]
 
             # Choose a subset of these to train the membership classifiers on
             in_indices = np.random.choice(in_indices, self.subset_size * self.num_pairs, replace=False)
@@ -152,29 +161,29 @@ class AttackEnsemble(AbstractMIA):
             # Create set of features and in/out label for each indices in subsets
             in_features = np.swapaxes(self.signal([shadow_model],
                                                   self.handler,
-                                                  in_indices,
-                                                  self.eval_batch_size), 0, 1)
+                                                  in_indices), 0, 1)
             out_features = np.swapaxes(self.signal([shadow_model],
                                                    self.handler,
-                                                   out_indices,
-                                                   self.eval_batch_size), 0, 1)
+                                                   out_indices), 0, 1)
 
 
             pair_models = []
-            for pair_i in range(self.num_pairs):
-                pair_subset = list(range(pair_i * self.subset_size, (pair_i + 1) * self.subset_size - 1))
+            for pair_i in tqdm(range(self.num_pairs),
+                               total=self.num_pairs,
+                               desc="Training the best membership classifier for each pair"):
+                pair_subset = list(range(pair_i * self.subset_size, (pair_i + 1) * self.subset_size))
 
-                pair_features = np.hstack((in_features[pair_subset], out_features[pair_subset]))
-                pair_label = np.hstack(np.full(self.subset_size, 1.0), np.full(self.subset_size, 1.0))
+                pair_features = np.vstack((in_features[pair_subset], out_features[pair_subset]))
+                pair_label = np.hstack((np.full(self.subset_size, 0), np.full(self.subset_size, 1)))
 
                 run_models = []
                 run_auc = []
                 for run_i in range(self.num_runs):
+                    # Randomly split the pair 50-50 into train and test data for the membership classifier
                     features_train, features_test, label_train, label_test = train_test_split(
                             pair_features, pair_label, test_size=0.5)
-                    scalers = [StandardScaler, MinMaxScaler, RobustScaler]
                     
-
+                    # Try each combination of scaler and model, record auc score on test set
                     for scaler in [StandardScaler, MinMaxScaler, RobustScaler]:
                         models = [RandomForestClassifier(), 
                                   GradientBoostingClassifier(),
@@ -182,26 +191,28 @@ class AttackEnsemble(AbstractMIA):
                                   DecisionTreeClassifier(),
                                   KNeighborsClassifier(),
                                   MLPClassifier(hidden_layer_sizes=(512,100,64), max_iter=100),
-                                  SVC(kernel="poly"),
-                                  SVC(kernel="rbf"),
-                                  SVC(kernel="sigmoid")]
+                                  SVC(kernel="poly", probability=True),
+                                  SVC(kernel="rbf", probability=True),
+                                  SVC(kernel="sigmoid", probability=True)]
                         
                         for model in models:
                             pipe = make_pipeline(scaler(), model)
-                            pipe.fit(features_train, label_train)
+                            pipe = pipe.fit(features_train, label_train)
                             
-                            probs = pipe.predict_proba(features_test)
+                            probs = pipe.predict_proba(features_test)[:, 1]
+
                             run_models.append(pipe)
                             run_auc.append(roc_auc_score(label_test, probs))
+
+                # Choose model with best ROC-AUC
                 best_model = run_models[0]
-                best_auc = 0.5
+                best_auc = 0.0
                 for i in range(len(run_models)):
                     if run_auc[i] > best_auc:
                         best_auc = run_auc[i]
                         best_model = run_models[i]
                 pair_models.append(best_model)
-            ensemble_models.append(VotingClassifier(pair_models, voting="soft"))
-        final_classifier = VotingClassifier(ensemble_models, voting="soft")
+            ensemble_models.append(pair_models)
         
         self.audit_data_indices = self.audit_dataset["data"]
         self.in_members = self.audit_dataset["in_members"]
@@ -209,9 +220,16 @@ class AttackEnsemble(AbstractMIA):
 
         features = np.swapaxes(self.signal([self.target_model],
                                             self.handler,
-                                            self.audit_data_indices,
-                                            self.eval_batch_size), 0, 1)
-        self.proba = final_classifier.predict_proba(features)
+                                            self.audit_data_indices), 0, 1)
+        
+        # Average membership probabilities over all instances and models
+        proba = np.zeros(features.shape[0])
+        for best_models in ensemble_models:
+            instance_proba = np.zeros(features.shape[0])
+            for model in best_models:
+                instance_proba += model.predict_proba(features)[:, 1]
+            proba += instance_proba / len(best_models)
+        self.proba = proba / self.num_instances
 
     def run_attack(self:Self) -> MIAResult:
         """Run the attack on the target model and dataset.

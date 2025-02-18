@@ -5,26 +5,6 @@ import pickle
 from tqdm import tqdm
 from torch import optim, cuda, no_grad, save
 
-
-class SimpleLSTM(nn.Module):
-    """Single layer LSTM for multi-variate forecasting"""
-    
-    def __init__(self, input_size, horizon):
-        super().__init__()
-        self.init_params = {"input_size": input_size,
-                            "horizon": horizon}
-        self.input_size = input_size
-        self.horizon = horizon
-        self.hidden_size = 64
-
-        self.lstm = nn.LSTM(input_size, self.hidden_size, batch_first=True)
-        self.linear = nn.Linear(self.hidden_size, input_size * horizon)
-
-    def forward(self, x):
-        lstm_out, (h_n, c_n) = self.lstm(x) # h_n shape: (num_layers, batch_size, hidden_size) 
-        linear_out = self.linear(h_n[0])   
-        return linear_out.view(-1, self.horizon, self.input_size)   # reshape to (batch_size, horizon, num_variables) 
-
 def evaluate(model, loader, criterion, device):
     model.eval()
     loss = 0
