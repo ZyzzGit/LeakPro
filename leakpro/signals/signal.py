@@ -364,3 +364,101 @@ class TrendLoss(Signal):
             results.append(model_trend_loss)
 
         return results
+    
+
+class MSELoss(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the per-sample MSE loss of a time-series model output.
+    """
+
+    def __call__(
+        self:Self,
+        models: List[Model],
+        handler: AbstractInputHandler,
+        indices: np.ndarray,
+        batch_size: int = 32,
+    ) -> List[np.ndarray]:
+        """Built-in call method.
+
+        Args:
+        ----
+            models: List of models that can be queried.
+            handler: The input handler object.
+            indices: List of indices in population dataset that can be queried from handler.
+            batch_size: Integer to determine batch size for dataloader.
+
+        Returns:
+        -------
+            The signal value.
+
+        """
+        # Compute the signal for each model
+        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
+
+        results = []
+        for m, model in enumerate(models):
+            # Initialize a matrix to store the MSE loss for the current model
+            model_mse_loss = []
+
+            for data, target in tqdm(data_loader, desc=f"Getting MSE loss for model {m+1}/ {len(models)}"):
+                output = model.get_logits(data)
+                target = target.numpy()
+                mse_loss = np.mean(np.square(output - target), axis=(1,2))
+                model_mse_loss.extend(mse_loss)
+
+            model_mse_loss = np.array(model_mse_loss)
+            results.append(model_mse_loss)
+
+        return results
+    
+class MASELoss(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the per-sample MASE loss of a time-series model output.
+    """
+
+    def __call__(
+        self:Self,
+        models: List[Model],
+        handler: AbstractInputHandler,
+        indices: np.ndarray,
+        batch_size: int = 32,
+    ) -> List[np.ndarray]:
+        """Built-in call method.
+
+        Args:
+        ----
+            models: List of models that can be queried.
+            handler: The input handler object.
+            indices: List of indices in population dataset that can be queried from handler.
+            batch_size: Integer to determine batch size for dataloader.
+
+        Returns:
+        -------
+            The signal value.
+
+        """
+        # Compute the signal for each model
+        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
+
+        results = []
+        for m, model in enumerate(models):
+            # Initialize a matrix to store the MASE loss for the current model
+            model_mase_loss = []
+
+            for data, target in tqdm(data_loader, desc=f"Getting MASE loss for model {m+1}/ {len(models)}"):
+                output = model.get_logits(data)
+                target = target.numpy()
+                me = np.mean(np.abs(output - target), axis=(1,2))
+                shifted_me = np.mean(np.abs(target[:, 1:, :] - target[:, :-1, :]), axis=(1,2))
+                mase_loss = np.divide(me, shifted_me)
+
+                model_mase_loss.extend(mase_loss)
+
+            model_mase_loss = np.array(model_mase_loss)
+            results.append(model_mase_loss)
+
+        return results
