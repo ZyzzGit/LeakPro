@@ -20,6 +20,7 @@ class ECGDataset(Dataset):
 
         self.individual_indices = individual_indices    # individual_indices[i] is a tuple [start_index, end_index) for individual i
         self.num_individuals = len(individual_indices)
+        self.num_samples_per_individual = len(self.x) // len(individual_indices)
 
     def __len__(self):
         return len(self.x)
@@ -54,7 +55,7 @@ def preprocess_ECG_dataset(path, lookback, horizon):
         with open(os.path.join(path, "ECG.pkl"), "rb") as f:
             dataset = joblib.load(f)
 
-    if dataset is None or dataset.x.shape[1] != lookback or dataset.y.shape[1] != horizon:
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon:
         raw_data_path = os.path.join(path, 'ECG')
         all_raw_time_series = list(filter(
             lambda ts: ts.shape[0] == timesteps, # keep time series with 5000 timesteps (only 52/10344 individuals don't satisfy this) 

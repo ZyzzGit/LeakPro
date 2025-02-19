@@ -1,6 +1,8 @@
 """Module containing the class to handle the user input for the Georgia 12-Lead ECG dataset."""
 
 import torch
+import random
+import numpy as np
 from torch import cuda, optim
 from torch.nn import MSELoss
 from torch.utils.data import DataLoader
@@ -58,3 +60,29 @@ class ECGInputHandler(AbstractInputHandler):
 
         model.to("cpu")
         return {"model": model, "metrics": {"loss": train_loss, "accuracy": None}}
+    
+    def sample_shadow_indices(self, shadow_population:list, data_size:int) -> np.ndarray:
+        """Samples data indices from shadow population by individuals"""
+        population_individuals = self.population.individual_indices
+        shadow_individuals = []
+        for ind in population_individuals:
+            start, end = ind
+            if start in shadow_population and end-1 in shadow_population:   # assumes we either have all or no samples from ind in shadow population
+                shadow_individuals.append(ind)
+
+        individual_length = self.population.num_samples_per_individual
+        num_shadow_individuals = data_size // individual_length # full num. individuals needed
+        num_remaining_samples = data_size % individual_length   # remaining num. samples to get data_size
+
+        # Sample individuals and extract corresponding dataset indices
+        sampled_shadow_individuals = random.sample(shadow_individuals, num_shadow_individuals + 1)
+        sampled_indices = np.concatenate([np.arange(start, stop) for (start, stop) in sampled_shadow_individuals[:-1]], axis=0)
+
+        # If required, use indices from an extra individual to get remaining samples
+        if (num_remaining_samples > 0):
+            start, stop = sampled_shadow_individuals[-1]
+            extra_samples = np.arange(start, stop)[:num_remaining_samples]
+            sampled_indices = np.concatenate(sampled_indices, extra_samples)
+
+        np.random.shuffle(sampled_indices)  # shuffle again to get random index order
+        return sampled_indices
