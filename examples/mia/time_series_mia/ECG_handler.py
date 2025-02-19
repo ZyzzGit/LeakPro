@@ -71,18 +71,11 @@ class ECGInputHandler(AbstractInputHandler):
                 shadow_individuals.append(ind)
 
         individual_length = self.population.num_samples_per_individual
-        num_shadow_individuals = data_size // individual_length # full num. individuals needed
-        num_remaining_samples = data_size % individual_length   # remaining num. samples to get data_size
+        num_shadow_individuals = data_size // individual_length 
 
         # Sample individuals and extract corresponding dataset indices
-        sampled_shadow_individuals = random.sample(shadow_individuals, num_shadow_individuals + 1)
-        sampled_indices = np.concatenate([np.arange(start, stop) for (start, stop) in sampled_shadow_individuals[:-1]], axis=0)
-
-        # If required, use indices from an extra individual to get remaining samples
-        if (num_remaining_samples > 0):
-            start, stop = sampled_shadow_individuals[-1]
-            extra_samples = np.arange(start, stop)[:num_remaining_samples]
-            sampled_indices = np.concatenate(sampled_indices, extra_samples)
+        sampled_shadow_individuals = random.sample(shadow_individuals, num_shadow_individuals)
+        sampled_indices = np.concatenate([np.arange(start, stop) for (start, stop) in sampled_shadow_individuals], axis=0)
 
         np.random.shuffle(sampled_indices)  # shuffle again to get random index order
         return sampled_indices
