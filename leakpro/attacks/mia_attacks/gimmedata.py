@@ -110,13 +110,13 @@ class AttackGimmeData(AbstractMIA):
         # load shadow models
         self.shadow_models, _ = ShadowModelHandler().get_shadow_models(self.shadow_model_indices)
 
-        in_indices_masks = ShadowModelHandler().get_in_indices_mask(self.shadow_model_indices, self.attack_data_indices).T
+        in_indices_masks = ShadowModelHandler().get_in_indices_mask(self.shadow_model_indices, np.arange(self.population_size)).T
         in_indices_masks = in_indices_masks.swapaxes(0, -1)
 
 
         features = [np.swapaxes(signal(self.shadow_models,
                                         self.handler,
-                                        self.attack_data_indices), 0, 1)
+                                        np.arange(self.population_size)), 0, 1)
                     for signal in self.signals]
         
         features = np.array(features)
