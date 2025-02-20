@@ -116,7 +116,8 @@ class AttackGimmeData(AbstractMIA):
 
         features = [np.swapaxes(signal(self.shadow_models,
                                         self.handler,
-                                        np.arange(self.population_size)), 0, 1)
+                                        np.arange(self.population_size),
+                                        batch_size=512), 0, 1)
                     for signal in self.signals]
         
         features = np.array(features)
