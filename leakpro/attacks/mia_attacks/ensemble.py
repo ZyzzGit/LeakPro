@@ -14,13 +14,14 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import roc_auc_score
 from sklearn.exceptions import ConvergenceWarning
+from xgboost import XGBClassifier
 
 
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
 from leakpro.metrics.attack_result import MIAResult
-from leakpro.signals.signal import TrendLoss
+from leakpro.signals.signal import TrendLoss, SeasonalityLoss
 from leakpro.utils.import_helper import Self
 from leakpro.utils.logger import logger
 
@@ -65,7 +66,7 @@ class AttackEnsemble(AbstractMIA):
         self.training_data_fraction = configs.get("training_data_fraction", 0.5)
         self.attack_data_fraction = configs.get("attack_data_fraction", 0.1)
         self.audit = configs.get("audit", False)
-        self.signal = TrendLoss() # Change this to be configurable
+        self.signals = [TrendLoss(), SeasonalityLoss()] # Change this to be configurable
         self.online = True
 
 
@@ -137,34 +138,53 @@ class AttackEnsemble(AbstractMIA):
 
 
 
-    def _audit_attack(self:Self) -> None:
-        raise NotImplementedError()
 
-    def _shadow_attack(self:Self) -> None:
-        logger.info("Running Ensemble shadow attack (attack mode)")
+    def run_attack(self:Self) -> MIAResult:
+        """Run the attack on the target model and dataset.
+
+        Returns
+        -------
+            Result(s) of the metric.
+
+        """
+        if self.audit:
+            logger.info("Running Ensemble shadow attack (audit mode)")
+        else:
+            logger.info("Running Ensemble shadow attack (attack mode)")
+            
 
         ensemble_models = []
         for instance in range(self.num_instances):
             logger.info(f"Running instance number {instance+1}/{self.num_instances}")
 
-            # Get current shadow model
-            shadow_model = self.shadow_models[instance]
+            if self.audit:
+                current_model = self.target_model
+                in_indices = self.audit_dataset["in_members"]
+                out_indices = self.audit_dataset["out_members"]
+            else:
+                # Get current shadow model
+                current_model = self.shadow_models[instance]
 
-            # Get indices which the current shadow model is trained or not trained on
-            in_indices = self.audit_dataset["data"][self.in_indices_masks[:, instance]]
-            out_indices = self.audit_dataset["data"][self.out_indices_masks[:, instance]]
+                # Get indices which the current shadow model is trained or not trained on
+                in_indices = self.attack_data_indices[self.in_indices_masks[:, instance]]
+                out_indices = self.attack_data_indices[self.out_indices_masks[:, instance]]
 
             # Choose a subset of these to train the membership classifiers on
             in_indices = np.random.choice(in_indices, self.subset_size * self.num_pairs, replace=False)
             out_indices = np.random.choice(out_indices, self.subset_size * self.num_pairs, replace=False)
 
             # Create set of features and in/out label for each indices in subsets
-            in_features = np.swapaxes(self.signal([shadow_model],
-                                                  self.handler,
-                                                  in_indices), 0, 1)
-            out_features = np.swapaxes(self.signal([shadow_model],
-                                                   self.handler,
-                                                   out_indices), 0, 1)
+            in_features = []
+            out_features = []
+            for signal in self.signals:
+                in_features.append(np.squeeze(signal([current_model],
+                                              self.handler,
+                                              in_indices)))
+                out_features.append(np.squeeze(signal([current_model],
+                                               self.handler,
+                                               out_indices)))
+            in_features = np.swapaxes(np.array(in_features), 0, 1)
+            out_features = np.swapaxes(np.array(out_features), 0, 1)
 
 
             pair_models = []
@@ -191,6 +211,7 @@ class AttackEnsemble(AbstractMIA):
                                   DecisionTreeClassifier(),
                                   KNeighborsClassifier(),
                                   MLPClassifier(hidden_layer_sizes=(512,100,64), max_iter=100),
+                                  XGBClassifier(),
                                   SVC(kernel="poly", probability=True),
                                   SVC(kernel="rbf", probability=True),
                                   SVC(kernel="sigmoid", probability=True)]
@@ -231,21 +252,8 @@ class AttackEnsemble(AbstractMIA):
             proba += instance_proba / len(best_models)
         self.proba = proba / self.num_instances
 
-    def run_attack(self:Self) -> MIAResult:
-        """Run the attack on the target model and dataset.
 
-        Returns
-        -------
-            Result(s) of the metric.
-
-        """
-        # perform the attack
-        if self.audit is True:
-            self._audit_attack()
-        else:
-            self._shadow_attack()
-
-                # Generate thresholds based on the range of computed scores for decision boundaries
+        # Generate thresholds based on the range of computed scores for decision boundaries
         self.thresholds = np.linspace(np.min(self.proba), np.max(self.proba), 1000)
 
         # Split the score array into two parts based on membership: in (training) and out (non-training)

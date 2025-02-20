@@ -95,7 +95,7 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals):
 
     return dataset
 
-def get_ECG_dataloaders(dataset: ECGDataset, train_fraction=0.5, test_fraction=0.3):
+def get_ECG_dataloaders(dataset: ECGDataset, train_fraction=0.5, test_fraction=0.3, batch_size=128):
 
     train_individuals, test_individuals = train_test_split(np.arange(dataset.num_individuals), train_size=train_fraction, test_size=test_fraction)
     
@@ -108,7 +108,7 @@ def get_ECG_dataloaders(dataset: ECGDataset, train_fraction=0.5, test_fraction=0
     train_subset = Subset(dataset, train_indices) 
     test_subset = Subset(dataset, test_indices)
 
-    train_loader = DataLoader(train_subset, batch_size=128, shuffle=True)
-    test_loader = DataLoader(test_subset, batch_size=128, shuffle=False)
+    train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False)
 
     return train_loader, test_loader
