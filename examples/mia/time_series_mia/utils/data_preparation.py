@@ -2,6 +2,7 @@ import os
 import pickle
 import joblib
 import torch
+import random
 import numpy as np
 
 from scipy.io import loadmat
@@ -46,7 +47,7 @@ def to_sequences(data, lookback, horizon):
         y.append(data[t + lookback:t + lookback + horizon, :])
     return tensor(np.array(x), dtype=float32), tensor(np.array(y), dtype=float32)
 
-def preprocess_ECG_dataset(path, lookback, horizon):
+def preprocess_ECG_dataset(path, lookback, horizon, num_individuals):
     """Get and preprocess the dataset."""
 
     dataset = None
@@ -55,11 +56,12 @@ def preprocess_ECG_dataset(path, lookback, horizon):
         with open(os.path.join(path, "ECG.pkl"), "rb") as f:
             dataset = joblib.load(f)
 
-    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon:
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals:
         raw_data_path = os.path.join(path, 'ECG')
+        individual_files = random.sample(os.listdir(raw_data_path), num_individuals)
         all_raw_time_series = list(filter(
             lambda ts: ts.shape[0] == timesteps, # keep time series with 5000 timesteps (only 52/10344 individuals don't satisfy this) 
-            map(lambda f: read_data(raw_data_path, f), os.listdir(raw_data_path)[0:10]) # TODO: delete pkl and remove '[0:10]' for testing on all data
+            map(lambda f: read_data(raw_data_path, f), individual_files) 
         ))
 
         # Scale all variables to range [0, 1]
