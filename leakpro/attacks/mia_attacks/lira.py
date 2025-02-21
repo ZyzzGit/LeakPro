@@ -9,7 +9,7 @@ from leakpro.attacks.utils.boosting import Memorization
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
 from leakpro.metrics.attack_result import MIAResult
-from leakpro.signals.signal import ModelRescaledLogits
+from leakpro.signals.signal import get_signal_from_name
 from leakpro.utils.import_helper import Self
 from leakpro.utils.logger import logger
 
@@ -32,7 +32,6 @@ class AttackLiRA(AbstractMIA):
         # Initializes the parent metric
         super().__init__(handler)
 
-        self.signal = ModelRescaledLogits()
         self._configure_attack(configs)
 
     def _configure_attack(self:Self, configs: dict) -> None:
@@ -50,6 +49,8 @@ class AttackLiRA(AbstractMIA):
         self.include_train_data = configs.get("include_train_data", self.online)
         self.include_test_data = configs.get("include_test_data", self.online)
         self.eval_batch_size = configs.get("eval_batch_size", 32)
+        signal_name = configs.get("signal", "ModelRescaledLogits")
+        self.signal = get_signal_from_name(signal_name)
 
         # Memorization config
         # Activate memorization

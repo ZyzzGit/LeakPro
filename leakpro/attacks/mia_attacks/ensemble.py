@@ -239,9 +239,12 @@ class AttackEnsemble(AbstractMIA):
         self.in_members = self.audit_dataset["in_members"]
         self.out_members = self.audit_dataset["out_members"]
 
-        features = np.swapaxes(self.signal([self.target_model],
-                                            self.handler,
-                                            self.audit_data_indices), 0, 1)
+        features = []
+        for signal in self.signals:
+            features.append(np.squeeze(signal([self.target_model],
+                                              self.handler,
+                                              self.audit_data_indices)))
+        features = np.swapaxes(np.array(features), 0, 1)
         
         # Average membership probabilities over all instances and models
         proba = np.zeros(features.shape[0])
