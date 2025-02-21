@@ -13,6 +13,17 @@ from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
 from leakpro.signals.signal_extractor import Model
 from leakpro.utils.import_helper import List, Optional, Self, Tuple
 
+def get_signal_from_name(signal_name):
+    return {
+        "ModelLogits": ModelLogits(),
+        "ModelRescaledLogits": ModelRescaledLogits(),
+        "ModelLoss": ModelLoss(),
+        "HopSkipJumpDistance": HopSkipJumpDistance(),
+        "SeasonalityLoss": SeasonalityLoss(),
+        "TrendLoss": TrendLoss(),
+        "MSELoss": MSELoss(),
+        "MASELoss": MASELoss(),
+    }[signal_name]
 
 class Signal(ABC):
     """Abstract class, representing any type of signal that can be obtained from a Model and/or a Dataset."""
