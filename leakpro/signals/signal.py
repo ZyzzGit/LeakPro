@@ -517,8 +517,10 @@ class TS2VecLoss(Signal):
         # Check if representation model is available
         ts2vec_model_path = 'data/ts2vec_model.pkl'
         if not os.path.exists(ts2vec_model_path):
-            logger.info("Training TS2Vec representation model on data population")
-            train_ts2vec(handler.population.y, num_variables)
+            logger.info("Training TS2Vec representation model")
+            ts2vec_train_indices = np.concatenate([handler.train_indices, handler.test_indices])
+            ts2vec_train_data = handler.population.y[ts2vec_train_indices]
+            train_ts2vec(ts2vec_train_data, num_variables)
 
         # Load represenation model
         device = "cuda:0" if cuda.is_available() else "cpu"
