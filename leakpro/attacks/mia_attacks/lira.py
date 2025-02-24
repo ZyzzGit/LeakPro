@@ -65,7 +65,7 @@ class AttackLiRA(AbstractMIA):
         self.num_memorization_audit_points = configs.get("num_memorization_audit_points", 0)
 
         # LiRA specific
-        # Determine which variance estimation method to use [carlini, individual_carlini]
+        # Determine which variance estimation method to use [carlini, individual_carlini, fixed]
         self.var_calculation = configs.get("var_calculation", "carlini")
 
         # Define the validation dictionary as: {parameter_name: (parameter, min_value, max_value)}

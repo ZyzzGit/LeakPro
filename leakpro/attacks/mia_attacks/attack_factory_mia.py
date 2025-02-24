@@ -7,6 +7,7 @@ from leakpro.attacks.mia_attacks.lira import AttackLiRA
 from leakpro.attacks.mia_attacks.loss_trajectory import AttackLossTrajectory
 from leakpro.attacks.mia_attacks.qmia import AttackQMIA
 from leakpro.attacks.mia_attacks.rmia import AttackRMIA
+from leakpro.attacks.mia_attacks.rmia_direct import AttackRMIADirect
 from leakpro.attacks.mia_attacks.yoqo import AttackYOQO
 from leakpro.attacks.mia_attacks.ensemble import AttackEnsemble
 from leakpro.attacks.utils.distillation_model_handler import DistillationModelHandler
@@ -27,6 +28,7 @@ class AttackFactoryMIA:
         "HSJ" : AttackHopSkipJump,
         "yoqo": AttackYOQO,
         "ensemble": AttackEnsemble,
+        "rmia_direct": AttackRMIADirect,
     }
 
     # Shared variables for all attacks
