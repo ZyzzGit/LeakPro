@@ -2,6 +2,7 @@
 
 import numpy as np
 from scipy.stats import norm
+from tqdm import tqdm
 
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
@@ -145,7 +146,7 @@ class AttackRMIADirect(AbstractMIA):
 
     def _carlini_variance(self:Self, logits: list, mask: list, is_in: bool) -> np.ndarray:
         if self.num_shadow_models >= self.fix_var_threshold*2:
-                return np.std(logits[mask])
+            return np.std(logits[mask])
         if is_in:
             return self.fixed_in_std
         return self.fixed_out_std
@@ -196,11 +197,11 @@ class AttackRMIADirect(AbstractMIA):
 
         # STEP 3: Run the attack
         # run audit points through target and shadow models to get logits
-        x_logits_target_model = np.array(self.signal([self.target_model], self.handler, audit_data_indices))
-        x_logits_shadow_models = self.signal(self.shadow_models, self.handler, audit_data_indices)
+        x_logits_target_model = np.array(self.signal([self.target_model], self.handler, audit_data_indices)).squeeze()
+        x_logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, audit_data_indices))
         
-        self.fixed_in_std = self.get_std(x_logits_shadow_models, in_indices_mask, True, "fixed")
-        self.fixed_out_std = self.get_std(x_logits_shadow_models, (~in_indices_mask).flatten(), False, "fixed")
+        self.fixed_in_std = self.get_std(x_logits_shadow_models.flatten(), in_indices_mask.flatten(), True, "fixed")
+        self.fixed_out_std = self.get_std(x_logits_shadow_models.flatten(), (~in_indices_mask).flatten(), False, "fixed")
 
         # Make a "random sample" to compute p(z) for points in attack dataset on the OUT shadow models for each audit point
         self.attack_data_index = self.sample_indices_from_population(include_train_indices = False,
@@ -221,17 +222,21 @@ class AttackRMIADirect(AbstractMIA):
 
         # Run sampled attack points through target and shadow models
         attack_data_in_indices_mask = ShadowModelHandler().get_in_indices_mask(self.shadow_model_indices, self.attack_data_index).T
-        z_logits_target_model = np.array(self.signal([self.target_model], self.handler, self.attack_data_index))
-        z_logits_shadow_models = self.signal(self.shadow_models, self.handler, self.attack_data_index)
+        z_logits_target_model = np.array(self.signal([self.target_model], self.handler, self.attack_data_index)).squeeze()
+        z_logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, self.attack_data_index))
 
         log_likelihoods = np.ndarray((n_audit_points, n_attack_points))
-        for i in range(n_audit_points):
-            for j in range(n_audit_points):
+
+        for i in tqdm(range(n_audit_points), desc="Calculating likelihoods"):
+            for j in range(n_attack_points):
                 x_mask = ~attack_data_in_indices_mask[:, j] & in_indices_mask[:, i]
                 z_mask = attack_data_in_indices_mask[:, j] & ~in_indices_mask[:, i]
 
                 if sum(x_mask) == 0 or sum(z_mask) == 0:
                     logger.info("error, x_mask or z_mask empty")
+                    logger.info(attack_data_in_indices_mask[:, j], in_indices_mask[:, i])
+                    logger.info(~attack_data_in_indices_mask[:, j], ~in_indices_mask[:, i])
+                    logger.info(x_mask, z_mask)
                     log_likelihoods[i, j] = -np.inf
                     continue
 
@@ -241,8 +246,8 @@ class AttackRMIADirect(AbstractMIA):
 
                     return norm.logpdf(target_logit, mean, std + self.epsilon)
                 
-                x_ratio = log_pr_logit(x_logits_shadow_models[i], x_mask, True, x_logits_target_model[i]) - log_pr_logit(x_logits_shadow_models[i], z_mask, True, x_logits_target_model[i])
-                z_ratio = log_pr_logit(z_logits_shadow_models[i], x_mask, True, z_logits_target_model[i]) - log_pr_logit(z_logits_shadow_models[i], z_mask, True, z_logits_target_model[i])
+                x_ratio = log_pr_logit(x_logits_shadow_models[:, i], x_mask, True, x_logits_target_model[i]) - log_pr_logit(x_logits_shadow_models[:, i], z_mask, True, x_logits_target_model[i])
+                z_ratio = log_pr_logit(z_logits_shadow_models[:, i], x_mask, True, z_logits_target_model[i]) - log_pr_logit(z_logits_shadow_models[:, i], z_mask, True, z_logits_target_model[i])
                 log_likelihoods[i, j] = x_ratio + z_ratio
 
         # Determine score as fraction of sampled points z that exceed threshold gamma
