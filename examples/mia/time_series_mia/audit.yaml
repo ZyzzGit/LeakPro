@@ -1,8 +1,8 @@
 audit: # Configurations for auditing
   random_seed: 42 # Integer specifying the random seed
-  attack_list:  # Ensemble MIA (Shachor et al. 2023)
+  attack_list: # Ensemble MIA (Shachor et al. 2023)
     ensemble:
-      training_data_fraction: 0.5  # Fraction of the auxilary dataset to use for this attack (in each shadow model training)
+      training_data_fraction: 0.5 # Fraction of the auxilary dataset to use for this attack (in each shadow model training)
       attack_data_fraction: 0.5 # Fraction of auxiliary dataset to sample from during attack
       num_instances: 50 # Number of shadow models to train in attack mode
       subset_size: 50
@@ -19,7 +19,7 @@ target:
   model_class: "DLinear"
   # Data paths
   target_folder: "./target"
-  data_path: "./data/ECG.pkl"
+  data_path: "./data/EEG.pkl"
 
 shadow_model:
 

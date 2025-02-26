@@ -1,4 +1,4 @@
-"""Module containing the class to handle the user input for the Georgia 12-Lead ECG dataset."""
+"""Module containing the class to handle the user input for the Georgia 12-Lead ECG or TUH-EEG dataset."""
 
 import torch
 import random
@@ -10,8 +10,8 @@ from tqdm import tqdm
 
 from leakpro import AbstractInputHandler
 
-class ECGInputHandler(AbstractInputHandler):
-    """Class to handle the user input for the Georgia 12-Lead ECG dataset."""
+class IndividualizedInputHandler(AbstractInputHandler):
+    """Class to handle the user input for the Georgia 12-Lead ECG or TUH-EEG dataset."""
 
     def __init__(self, configs: dict) -> None:
         super().__init__(configs = configs)
@@ -61,7 +61,7 @@ class ECGInputHandler(AbstractInputHandler):
         model.to("cpu")
         return {"model": model, "metrics": {"loss": train_loss, "accuracy": None}}
     
-    def sample_shadow_indices(self, shadow_population:list, data_size:int) -> np.ndarray:
+    def sample_shadow_indices(self, shadow_population:list, data_fraction:float) -> np.ndarray:
         """Samples data indices from shadow population by individuals"""
         population_individuals = self.population.individual_indices
         shadow_individuals = []
@@ -70,8 +70,8 @@ class ECGInputHandler(AbstractInputHandler):
             if start in shadow_population and end-1 in shadow_population:   # assumes we either have all or no samples from ind in shadow population
                 shadow_individuals.append(ind)
 
-        individual_length = self.population.num_samples_per_individual
-        num_shadow_individuals = data_size // individual_length 
+        num_individuals = self.population.num_individuals
+        num_shadow_individuals = num_individuals * data_fraction
 
         # Sample individuals and extract corresponding dataset indices
         sampled_shadow_individuals = random.sample(shadow_individuals, num_shadow_individuals)
