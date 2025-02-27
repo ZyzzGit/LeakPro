@@ -36,17 +36,17 @@ def read_mat_data(path, file):
     file_path = os.path.join(path, file)
     return loadmat(file_path)['val'].T  # transpose to get shape (#timesteps, #variables)
 
-def to_sequences(data, lookback, horizon):
+def to_sequences(data, lookback, horizon, stride):
     x, y = [], []
     timesteps = len(data)
     num_samples = timesteps - (lookback + horizon) + 1
 
-    for t in range(num_samples):
+    for t in range(0, num_samples, stride):
         x.append(data[t:t + lookback, :])
         y.append(data[t + lookback:t + lookback + horizon, :])
     return tensor(np.array(x), dtype=float32), tensor(np.array(y), dtype=float32)
 
-def preprocess_ECG_dataset(path, lookback, horizon, num_individuals):
+def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, stride=1):
     """Get and preprocess the dataset."""
 
     dataset = None
@@ -77,7 +77,7 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals):
         y = []
         for time_series in data_scaled:
             # Create sequences separately for each individual
-            xi, yi = to_sequences(time_series, lookback, horizon)
+            xi, yi = to_sequences(time_series, lookback, horizon, stride)
             x.append(xi)
             y.append(yi)
 
@@ -94,7 +94,7 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals):
 
     return dataset
 
-def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3):
+def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, stride=1):
     """Get and preprocess the dataset. Assuming subset of first 100 patients (EEG\000)."""
 
     dataset = None
@@ -145,7 +145,7 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3):
             individual_length = 0
             for time_series in individual:
                 # Create sequences separately for each time series
-                xi, yi = to_sequences(time_series, lookback, horizon)
+                xi, yi = to_sequences(time_series, lookback, horizon, stride)
                 x.append(xi)
                 y.append(yi)
                 individual_length += len(xi)

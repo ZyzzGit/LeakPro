@@ -471,7 +471,7 @@ class MASELoss(Signal):
                 target = target.numpy()
                 me = np.mean(np.abs(output - target), axis=(1,2))
                 shifted_me = np.mean(np.abs(target[:, 1:, :] - target[:, :-1, :]), axis=(1,2))
-                mase_loss = np.divide(me, shifted_me)
+                mase_loss = np.divide(me, shifted_me + 1e-30)
 
                 model_mase_loss.extend(mase_loss)
 
