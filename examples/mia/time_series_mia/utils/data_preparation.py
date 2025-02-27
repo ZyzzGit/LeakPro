@@ -90,12 +90,12 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, stride=1):
         dataset = IndividualizedDataset(x, y, individual_indices)
         with open(f"{path}/ECG.pkl", "wb") as file:
             pickle.dump(dataset, file)
-            print(f"Save data to {path}.pkl") 
+            print(f"Save data to {path}/ECG.pkl") 
 
     return dataset
 
 def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, stride=1):
-    """Get and preprocess the dataset. Assuming subset of first 100 patients (EEG\000)."""
+    """Get and preprocess the dataset. Assuming subset of first 100 patients (EEG/000)."""
 
     dataset = None
     if os.path.exists(os.path.join(path, "EEG.pkl")):
@@ -103,19 +103,20 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
             dataset = joblib.load(f)
 
     if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals:
-        subjects = os.listdir(os.path.join(path, 'EEG\\000'))
+        data_path = os.path.join(path, 'EEG/000')
+        subjects = os.listdir(data_path)
         random.shuffle(subjects)   # randomize order of individuals
 
         individuals = []    # individuals[i][j] is the j:th token (time series) of individual i
         for subject in subjects:
             individual_data = []    # data for current subject
-            for session in os.listdir(os.path.join(path, f'EEG\\000/{subject}')):
-                dirs = os.listdir(os.path.join(path, f'EEG\\000/{subject}/{session}'))
+            for session in os.listdir(os.path.join(data_path, subject)):
+                dirs = os.listdir(os.path.join(data_path, f'{subject}/{session}'))
                 if len(dirs) > 1:
                     raise Exception(f'Expected single montage, but {subject}/{session} has {len(dirs)} montage definitions!')
                 montage_definition = dirs[0]
-                for token in os.listdir(os.path.join(path, f'EEG\\000/{subject}/{session}/{montage_definition}')):
-                    file = os.path.join(path, f'EEG\\000/{subject}/{session}/{montage_definition}/{token}')
+                for token in os.listdir(os.path.join(data_path, f'{subject}/{session}/{montage_definition}')):
+                    file = os.path.join(data_path, f'{subject}/{session}/{montage_definition}/{token}')
                     data = read_raw_edf(file)
                     if data.info['sfreq'] == 250:   # only keep data sampled at a frequency of 250 Hz
                         time_series = data.get_data()
@@ -158,7 +159,7 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
         dataset = IndividualizedDataset(x, y, individual_indices)
         with open(f"{path}/EEG.pkl", "wb") as file:
             pickle.dump(dataset, file)
-            print(f"Save data to {path}.pkl") 
+            print(f"Save data to {path}/EEG.pkl") 
 
     return dataset
 
