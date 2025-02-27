@@ -480,7 +480,7 @@ class MASELoss(Signal):
 
         return results
     
-class TS2VecLoss(Signal):
+class TS2VecPerSeriesLoss(Signal):
     """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
 
     This particular class is used to get the TS2Vec loss of a time-series model output.
@@ -492,7 +492,7 @@ class TS2VecLoss(Signal):
         models: List[Model],
         handler: AbstractInputHandler,
         indices: np.ndarray,
-        batch_size: int = 32,
+        batch_size: int = 128,
     ) -> List[np.ndarray]:
         """Built-in call method.
 
@@ -536,12 +536,81 @@ class TS2VecLoss(Signal):
             # Initialize a matrix to store the TS2Vec loss for the current model
             model_ts2vec_loss = []
 
-            for data, target in tqdm(data_loader, desc=f"Getting TS2Vec loss for model {m+1}/ {len(models)}"):
+            for data, target in tqdm(data_loader, desc=f"Getting TS2VecPerSeries loss for model {m+1}/ {len(models)}"):
                 # Get the TS2Vec encodings and compute L2 norm between true and pred
                 output = model.get_logits(data)
                 ts2vec_pred = ts2vec_model.encode(output, encoding_window='full_series')
                 ts2vec_true = ts2vec_model.encode(target.numpy(), encoding_window='full_series')
                 ts2vec_loss = norm(ts2vec_true - ts2vec_pred, axis=1)
+                model_ts2vec_loss.extend(ts2vec_loss)
+
+            model_ts2vec_loss = np.array(model_ts2vec_loss)
+            results.append(model_ts2vec_loss)
+
+        return results
+    
+class TS2VecPerTimestepLoss(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the TS2Vec loss of a time-series model output.
+    We define this as the distance (L2 norm) between the TS2Vec representations of the true and predicted values.
+    """
+
+    def __call__(
+        self:Self,
+        models: List[Model],
+        handler: AbstractInputHandler,
+        indices: np.ndarray,
+        batch_size: int = 128,
+    ) -> List[np.ndarray]:
+        """Built-in call method.
+
+        Args:
+        ----
+            models: List of models that can be queried.
+            handler: The input handler object.
+            indices: List of indices in population dataset that can be queried from handler.
+            batch_size: Integer to determine batch size for dataloader.
+
+        Returns:
+        -------
+            The signal value.
+
+        """
+        _, _, num_variables = handler.population.y.shape
+
+        # Compute the signal for each model
+        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
+
+        # Check if representation model is available
+        ts2vec_model_path = 'data/ts2vec_model.pkl'
+        if not os.path.exists(ts2vec_model_path):
+            logger.info("Training TS2Vec representation model")
+            ts2vec_train_indices = np.concatenate([handler.train_indices, handler.test_indices])
+            ts2vec_train_data = handler.population.y[ts2vec_train_indices]
+            train_ts2vec(ts2vec_train_data, num_variables)
+
+        # Load represenation model
+        device = "cuda:0" if cuda.is_available() else "cpu"
+        ts2vec_model = TS2Vec(
+            input_dims=num_variables,
+            device=device,
+            batch_size=batch_size
+        )
+        ts2vec_model.load(ts2vec_model_path)
+
+        results = []
+        for m, model in enumerate(models):
+            # Initialize a matrix to store the TS2Vec loss for the current model
+            model_ts2vec_loss = []
+
+            for data, target in tqdm(data_loader, desc=f"Getting TS2VecPerTimestep loss for model {m+1}/ {len(models)}"):
+                # Get the TS2Vec encodings and compute L2 norm between true and pred
+                output = model.get_logits(data)
+                ts2vec_pred = ts2vec_model.encode(output)
+                ts2vec_true = ts2vec_model.encode(target.numpy())
+                ts2vec_loss = norm(ts2vec_true - ts2vec_pred, axis=(1,2))
                 model_ts2vec_loss.extend(ts2vec_loss)
 
             model_ts2vec_loss = np.array(model_ts2vec_loss)
