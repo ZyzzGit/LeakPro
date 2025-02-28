@@ -6,7 +6,7 @@ import random
 import numpy as np
 
 from scipy.io import loadmat
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import RobustScaler
 from torch import tensor, float32
 from torch.utils.data import DataLoader, Dataset, Subset
 from sklearn.model_selection import train_test_split
@@ -63,8 +63,8 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, stride=1):
             map(lambda f: read_mat_data(raw_data_path, f), individual_files) 
         ))
 
-        # Scale all variables to range [0, 1]
-        scaler = MinMaxScaler()
+        # IQR scaling
+        scaler = RobustScaler()
         data = np.concatenate(all_raw_time_series)
         data_scaled = scaler.fit_transform(data)
 
@@ -130,11 +130,13 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
             if (len(individuals) == num_individuals):
                 break
 
-        # Fit and transform MinMaxScaler separately for each time-series 
-        scaler = MinMaxScaler()
+        # IQR scaling
+        scaler = RobustScaler()
+        all_values = np.vstack([time_series for ind in individuals for time_series in ind])
+        scaler.fit(all_values)
         scaled_individuals = [
-            [scaler.fit_transform(ts) for ts in person]
-            for person in individuals
+            [scaler.transform(time_series) for time_series in ind]
+            for ind in individuals
         ]
 
         x = []  # lists to store samples for all individuals and series
