@@ -19,6 +19,7 @@ class IndividualizedDataset(Dataset):
 
         self.lookback = x.size(1)
         self.horizon = y.size(1)
+        self.num_variables = y.size(2)
 
         self.individual_indices = individual_indices    # individual_indices[i] is a tuple [start_index, end_index) for individual i
         self.num_individuals = len(individual_indices)
@@ -102,7 +103,7 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
         with open(os.path.join(path, "EEG.pkl"), "rb") as f:
             dataset = joblib.load(f)
 
-    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals:
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.num_variables != k_lead:
         data_path = os.path.join(path, 'EEG/000')
         subjects = os.listdir(data_path)
         random.shuffle(subjects)   # randomize order of individuals
