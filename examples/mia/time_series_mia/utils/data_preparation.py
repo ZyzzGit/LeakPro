@@ -13,10 +13,11 @@ from sklearn.model_selection import train_test_split
 from mne.io import read_raw_edf
 
 class IndividualizedDataset(Dataset):
-    def __init__(self, x:tensor, y:tensor, individual_indices:list[tuple[int,int]]):
+    def __init__(self, x:tensor, y:tensor, individual_indices:list[tuple[int,int]], scaler):
         self.x = x
         self.y = y
-
+        self.scaler = scaler
+        
         self.lookback = x.size(1)
         self.horizon = y.size(1)
         self.num_variables = y.size(2)
@@ -88,8 +89,7 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, 
 
         # Concatenate samples and save dataset
         x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
-        dataset = IndividualizedDataset(x, y, individual_indices)
-        dataset.scaler = scaler
+        dataset = IndividualizedDataset(x, y, individual_indices, scaler)
         with open(f"{path}/ECG.pkl", "wb") as file:
             pickle.dump(dataset, file)
             print(f"Save data to {path}/ECG.pkl") 
@@ -125,7 +125,7 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
                 montage_definition = dirs[0]
                 for token in os.listdir(os.path.join(data_path, f'{subject}/{session}/{montage_definition}')):
                     file = os.path.join(data_path, f'{subject}/{session}/{montage_definition}/{token}')
-                    data = read_raw_edf(file)
+                    data = read_raw_edf(file, verbose=False)
                     if data.info['sfreq'] == 250:   # only keep data sampled at a frequency of 250 Hz
                         individual_data.append(data)
 
@@ -164,7 +164,7 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
 
         # Concatenate samples and save dataset
         x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
-        dataset = IndividualizedDataset(x, y, individual_indices)
+        dataset = IndividualizedDataset(x, y, individual_indices, scaler)
         with open(f"{path}/EEG.pkl", "wb") as file:
             pickle.dump(dataset, file)
             print(f"Save data to {path}/EEG.pkl") 

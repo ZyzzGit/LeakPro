@@ -1,5 +1,5 @@
 run: # Configurations for a specific run
-  random_seed: 1234 # Integer number of specifying random seed
+  random_seed: 42 # Integer number of specifying random seed
   log_dir: target # String for indicating where to save all the information, including models and computed signals. We can reuse the models saved in the same log_dir.
 
 train: # Configuration for training
@@ -8,11 +8,12 @@ train: # Configuration for training
   optimizer: Adam # String which indicates the optimizer. We support Adam and SGD.
 
 data: # Configuration for data
-  dataset: EEG # String indicates the name of the dataset
-  f_train: 0.3 # Float number from 0 to 1 indicating the fraction of the train dataset
-  f_test: 0.3 # Float number from 0 to 1 indicating the size of the test set
+  dataset: ECG # String indicates the name of the dataset
+  f_train: 0.5 # Float number from 0 to 1 indicating the fraction of the train dataset
+  f_test: 0.5 # Float number from 0 to 1 indicating the size of the test set
   data_dir: data # String about where to find the data.
   lookback: 100
   horizon: 20
   num_individuals: 10
-  k_lead: 3 # Number of leading variables to use (applicable for EEG only)
+  k_lead: 3 # Number of leading variables to use
+  stride: 1

@@ -5,13 +5,23 @@ import pickle
 from tqdm import tqdm
 from torch import optim, cuda, no_grad, save
 
-def evaluate(model, loader, criterion, device):
+def evaluate(model, loader, criterion, device, original_scale=False):
     model.eval()
     loss = 0
     with no_grad():
-        for data, target in loader:
+        for data, target in loader:                
             data, target = data.to(device), target.to(device)
             pred = model(data)
+            if original_scale:
+                pred_2D = pred.detach().cpu().numpy().reshape(-1, pred.shape[-1])
+                target_2D = target.detach().cpu().numpy().reshape(-1, target.shape[-1])
+
+                pred_descaled = loader.dataset.dataset.scaler.inverse_transform(pred_2D)
+                target_descaled = loader.dataset.dataset.scaler.inverse_transform(target_2D)
+
+                pred = torch.tensor(pred_descaled, device=device).reshape(pred.shape)
+                target = torch.tensor(target_descaled, device=device).reshape(target.shape)
+
             loss += criterion(pred, target).item()
         loss /= len(loader)
     return loss
