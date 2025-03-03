@@ -19,7 +19,7 @@ target:
   model_class: "DLinear"
   # Data paths
   target_folder: "./target"
-  data_path: "./data/ECG.pkl"
+  data_path: "./data/EEG.pkl"
 
 shadow_model:
 
