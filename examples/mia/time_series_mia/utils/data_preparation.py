@@ -32,7 +32,8 @@ class IndividualizedDataset(Dataset):
     
     def subset(self, indices):
         return Subset(self, indices)
-    
+
+
 def read_mat_data(path, file):
     file_path = os.path.join(path, file)
     return loadmat(file_path)['val'].T  # transpose to get shape (#timesteps, #variables)
@@ -95,6 +96,12 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, stride=1):
 
     return dataset
 
+
+def get_edf_time_series(edf_data, k_lead):
+    time_series = edf_data.get_data()
+    time_series = time_series.T # transpose to get sample dimension first
+    return time_series[:,:k_lead] # select k first variables
+
 def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, stride=1):
     """Get and preprocess the dataset. Assuming subset of first 100 patients (EEG/000)."""
 
@@ -120,16 +127,14 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
                     file = os.path.join(data_path, f'{subject}/{session}/{montage_definition}/{token}')
                     data = read_raw_edf(file)
                     if data.info['sfreq'] == 250:   # only keep data sampled at a frequency of 250 Hz
-                        time_series = data.get_data()
-                        time_series = time_series.T # transpose to get sample dimension first
-                        time_series_k_lead = time_series[:,:k_lead] # select k first variables
-                        individual_data.append(time_series_k_lead)
+                        individual_data.append(data)
 
             if (len(individual_data) > 0):
                 individuals.append(individual_data)
 
-            if (len(individuals) == num_individuals):
-                break
+        # Get time series of individuals with similar size
+        individuals.sort(key=lambda ls: len(ls))
+        individuals = [[get_edf_time_series(data, k_lead) for data in ind] for ind in individuals[:num_individuals]]
 
         # IQR scaling
         scaler = RobustScaler()
@@ -166,10 +171,13 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
 
     return dataset
 
+
 def get_dataloaders(dataset: IndividualizedDataset, train_fraction=0.5, test_fraction=0.3, batch_size=128):
 
-    train_individuals, test_individuals = train_test_split(np.arange(dataset.num_individuals), train_size=train_fraction, test_size=test_fraction)
-    
+    train_size = int(train_fraction * dataset.num_individuals)
+    test_size = int(test_fraction * dataset.num_individuals)
+    train_individuals, test_individuals = train_test_split(np.arange(dataset.num_individuals), train_size=train_size, test_size=test_size)
+        
     train_ranges = [dataset.individual_indices[i] for i in train_individuals]
     test_ranges = [dataset.individual_indices[i] for i in test_individuals]
 
