@@ -48,7 +48,7 @@ def to_sequences(data, lookback, horizon, stride):
         y.append(data[t + lookback:t + lookback + horizon, :])
     return tensor(np.array(x), dtype=float32), tensor(np.array(y), dtype=float32)
 
-def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, stride=1):
+def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, stride=1):
     """Get and preprocess the dataset."""
 
     dataset = None
@@ -60,10 +60,11 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, stride=1):
     if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals:
         raw_data_path = os.path.join(path, 'ECG')
         individual_files = random.sample(os.listdir(raw_data_path), num_individuals)
-        all_raw_time_series = list(filter(
+        all_raw_time_series = np.array(list(filter(
             lambda ts: ts.shape[0] == timesteps, # keep time series with 5000 timesteps (only 52/10344 individuals don't satisfy this) 
             map(lambda f: read_mat_data(raw_data_path, f), individual_files) 
-        ))
+        )))
+        all_raw_time_series = all_raw_time_series[..., :k_lead]
 
         # IQR scaling
         scaler = RobustScaler()
@@ -71,9 +72,7 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, stride=1):
         data_scaled = scaler.fit_transform(data)
 
         # Reshape to include individual dimension again (this is OK since all time series have equal length)
-        num_variables = data_scaled.shape[-1]
-        num_individuals = len(all_raw_time_series)
-        data_scaled = data_scaled.reshape((num_individuals, timesteps, num_variables))
+        data_scaled = data_scaled.reshape(all_raw_time_series.shape)
 
         x = []  # lists to store samples for all individuals
         y = []
@@ -90,6 +89,7 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, stride=1):
         # Concatenate samples and save dataset
         x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
         dataset = IndividualizedDataset(x, y, individual_indices)
+        dataset.scaler = scaler
         with open(f"{path}/ECG.pkl", "wb") as file:
             pickle.dump(dataset, file)
             print(f"Save data to {path}/ECG.pkl") 
