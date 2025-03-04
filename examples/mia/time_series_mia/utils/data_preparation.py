@@ -142,7 +142,6 @@ def preprocess_LCL_dataset(path, lookback, horizon, num_individuals, stride=1):
     return dataset 
 
 
-
 def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, stride=1):
     """Get and preprocess the dataset."""
 
@@ -191,10 +190,10 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, 
     return dataset
 
 
-def get_edf_time_series(edf_data, k_lead):
+def get_edf_time_series(edf_data, k_lead, num_timesteps):
     time_series = edf_data.get_data()
     time_series = time_series.T # transpose to get sample dimension first
-    return time_series[:,:k_lead] # select k first variables
+    return time_series[:num_timesteps, :k_lead] # select first num_timesteps of the k first variables
 
 def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, stride=1):
     """Get and preprocess the dataset. Assuming subset of first 100 patients (EEG/000)."""
@@ -209,9 +208,9 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
         subjects = os.listdir(data_path)
         random.shuffle(subjects)   # randomize order of individuals
 
-        individuals = []    # individuals[i][j] is the j:th token (time series) of individual i
+        individuals = []    # individuals[i] is the largest token (time series) of individual i
         for subject in subjects:
-            individual_data = []    # data for current subject
+            largest_token = None
             for session in os.listdir(os.path.join(data_path, subject)):
                 dirs = os.listdir(os.path.join(data_path, f'{subject}/{session}'))
                 if len(dirs) > 1:
@@ -220,46 +219,44 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
                 for token in os.listdir(os.path.join(data_path, f'{subject}/{session}/{montage_definition}')):
                     file = os.path.join(data_path, f'{subject}/{session}/{montage_definition}/{token}')
                     data = read_raw_edf(file, verbose=False)
-                    if data.info['sfreq'] == 250:   # only keep data sampled at a frequency of 250 Hz
-                        individual_data.append(data)
+                    if data.info['sfreq'] != 250:   # only keep data sampled at a frequency of 250 Hz
+                        continue
+                    if largest_token == None or data.n_times > largest_token.n_times:
+                        largest_token = data
 
-            if (len(individual_data) > 0):
-                individuals.append(individual_data)
+            if largest_token:
+                individuals.append(largest_token)
 
-        # Get time series of individuals with similar size
-        individuals.sort(key=lambda ls: len(ls))
-        individuals = [[get_edf_time_series(data, k_lead) for data in ind] for ind in individuals[:num_individuals]]
+        # Get the largest individual time series and trim to the minimum length
+        individuals.sort(key=lambda ts: ts.n_times, reverse=True)
+        selected_individuals = individuals[:num_individuals]
+        min_length = selected_individuals[-1].n_times
+        trimmed_selected_time_series = np.array([get_edf_time_series(ind, k_lead, min_length) for ind in selected_individuals])
 
         # IQR scaling
         scaler = RobustScaler()
-        all_values = np.vstack([time_series for ind in individuals for time_series in ind])
-        scaler.fit(all_values)
-        scaled_individuals = [
-            [scaler.transform(time_series) for time_series in ind]
-            for ind in individuals
-        ]
+        data = np.concatenate(trimmed_selected_time_series)
+        data_scaled = scaler.fit_transform(data)
 
-        x = []  # lists to store samples for all individuals and series
+        # Reshape to include individual dimension again (this is OK since all time series have equal length)
+        data_scaled = data_scaled.reshape(trimmed_selected_time_series.shape)
+
+        x = []  # lists to store samples for all individuals
         y = []
-        curr_idx = 0  # index of dataset to be constructed (x and y)
-        individual_indices = [] # keep track of sample indices for each individual (will span over multiple time series)
-        for individual in scaled_individuals:
-            start_idx = curr_idx
-            individual_length = 0
-            for time_series in individual:
-                # Create sequences separately for each time series
-                xi, yi = to_sequences(time_series, lookback, horizon, stride)
-                x.append(xi)
-                y.append(yi)
-                individual_length += len(xi)
+        for time_series in data_scaled:
+            # Create sequences separately for each individual
+            xi, yi = to_sequences(time_series, lookback, horizon, stride)
+            x.append(xi)
+            y.append(yi)
 
-            curr_idx += individual_length
-            individual_indices.append((start_idx, curr_idx))
+        # Keep track of sample indices for each individual time series
+        num_samples_per_individual = len(x[0])
+        individual_indices = [(0 + num_samples_per_individual*i, num_samples_per_individual*(i+1)) for i in range(len(x))]
 
         # Concatenate samples and save dataset
         x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
         dataset = IndividualizedDataset(x, y, individual_indices, scaler)
-        with open(os.path.join(path, "EEG.pkl"), "wb") as file:
+        with open(f"{path}/EEG.pkl", "wb") as file:
             pickle.dump(dataset, file)
             print(f"Save data to {path}/EEG.pkl") 
 
