@@ -14,6 +14,7 @@ from torch import cuda
 
 from leakpro.utils.logger import logger
 from leakpro.signals.utils.TS2VecTrainer import train_ts2vec
+from leakpro.signals.utils.msm import mv_msm_distance
 from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
 from leakpro.signals.signal_extractor import Model
 from leakpro.utils.import_helper import List, Optional, Self, Tuple
@@ -594,5 +595,52 @@ class DTWDistance(Signal):
 
             model_dtw_distance = np.array(model_dtw_distance)
             results.append(model_dtw_distance)
+
+        return results
+    
+class MSMDistance(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the Move-Split-Merge distance between a time-series model output and the target series.
+    """
+
+    def __call__(
+        self:Self,
+        models: List[Model],
+        handler: AbstractInputHandler,
+        indices: np.ndarray,
+        batch_size: int = 32,
+    ) -> List[np.ndarray]:
+        """Built-in call method.
+
+        Args:
+        ----
+            models: List of models that can be queried.
+            handler: The input handler object.
+            indices: List of indices in population dataset that can be queried from handler.
+            batch_size: Integer to determine batch size for dataloader.
+
+        Returns:
+        -------
+            The signal value.
+
+        """
+        # Compute the signal for each model
+        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
+
+        results = []
+        for m, model in enumerate(models):
+            # Initialize a matrix to store the MSM distances for the current model
+            model_msm_distance = []
+
+            for data, target in tqdm(data_loader, desc=f"Getting MSM distance for model {m+1}/ {len(models)}"):
+                # Get the MSM distances for batch
+                output = model.get_logits(data)
+                batch_msm_distances = np.array(list(map(mv_msm_distance, target.numpy(), output)))
+                model_msm_distance.extend(batch_msm_distances)
+
+            model_msm_distance = np.array(model_msm_distance)
+            results.append(model_msm_distance)
 
         return results

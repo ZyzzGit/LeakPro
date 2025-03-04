@@ -71,7 +71,7 @@ class IndividualizedInputHandler(AbstractInputHandler):
                 shadow_individuals.append(ind)
 
         num_individuals = self.population.num_individuals
-        num_shadow_individuals = num_individuals * data_fraction
+        num_shadow_individuals = int(num_individuals * data_fraction)
 
         # Sample individuals and extract corresponding dataset indices
         sampled_shadow_individuals = random.sample(shadow_individuals, num_shadow_individuals)

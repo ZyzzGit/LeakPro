@@ -26,13 +26,18 @@ def evaluate(model, loader, criterion, device, original_scale=False):
         loss /= len(loader)
     return loss
 
-def create_trained_model_and_metadata(model, train_loader, test_loader, epochs):
+def create_trained_model_and_metadata(model, train_loader, test_loader, epochs, optimizer_name):
     device = torch.device("cuda" if cuda.is_available() else "cpu")
     model.to(device)
     model.train()
 
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters())
+    if optimizer_name == "Adam":
+        optimizer = optim.Adam(model.parameters())
+    elif optimizer_name == "SGD":
+        optimizer = optim.SGD(model.parameters())
+    else:
+        raise NotImplementedError()
     train_losses, test_losses = [], []
     
     for _ in tqdm(range(epochs), desc="Training Progress"):
