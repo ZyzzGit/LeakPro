@@ -221,15 +221,17 @@ class AttackLiRA(AbstractMIA):
             return self._fixed_variance(logits, mask, is_in)
 
         # Variance calculation as in the paper ( Membership Inference Attacks From First Principles )
-        if var_calculation == "carlini":
+        elif var_calculation == "carlini":
             return self._carlini_variance(logits, mask, is_in)
 
         # Variance calculation as in the paper ( Membership Inference Attacks From First Principles )
         #   but check IN and OUT samples individualy
-        if var_calculation == "individual_carlini":
+        elif var_calculation == "individual_carlini":
             return self._individual_carlini(logits, mask, is_in)
-
-        return np.array([None])
+        
+        # Unknown variance calculation
+        else:
+            raise NotImplementedError("Unknown variance calculation specified.")
 
     def _fixed_variance(self:Self, logits: list, mask: list, is_in: bool) -> np.ndarray:
         if is_in and not self.online:

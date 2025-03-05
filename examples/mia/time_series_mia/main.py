@@ -8,9 +8,7 @@ from examples.mia.time_series_mia.utils.model_preparation import create_trained_
 from examples.mia.time_series_mia.utils.models.LSTM import LSTM
 from examples.mia.time_series_mia.utils.models.TCN import TCN
 from examples.mia.time_series_mia.utils.models.DLinear import DLinear
-from examples.mia.time_series_mia.utils.models.TimesNet import TimesNet
 from examples.mia.time_series_mia.utils.models.NBeats import NBeats
-from examples.mia.time_series_mia.utils.models.TFT import TFT
 from examples.mia.time_series_mia.utils.models.WaveNet import WaveNet
 
 from data_handler import IndividualizedInputHandler
@@ -79,12 +77,8 @@ if __name__ == "__main__":
         model = TCN(input_dim, horizon)
     elif model_name == "DLinear":
         model = DLinear(input_dim, lookback, horizon)
-    elif model_name == "TimesNet":
-        model = TimesNet(input_dim, lookback, horizon)
     elif model_name == "NBeats":
         model = NBeats(input_dim, lookback, horizon)
-    elif model_name == "TFT":
-        model = TFT(input_dim, lookback, horizon)
     elif model_name == "WaveNet":
         model = WaveNet(input_dim, horizon)
     else:
