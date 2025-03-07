@@ -53,7 +53,65 @@ def to_sequences(data, lookback, horizon, stride):
         y.append(data[t + lookback:t + lookback + horizon, :])
     return tensor(np.array(x), dtype=float32), tensor(np.array(y), dtype=float32)
 
-def preprocess_LCL_dataset(path, lookback, horizon, num_individuals, stride=1):
+def preprocess_ELD_dataset(path, lookback, horizon, num_individuals, stride=1, **kwargs):
+    """Get and preprocess the dataset."""
+
+    dataset = None
+    if os.path.exists(os.path.join(path, "ELD.pkl")):
+        with open(os.path.join(path, "ELD.pkl"), "rb") as f:
+            dataset = joblib.load(f)
+
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals:
+
+        df = pd.read_csv(os.path.join(path, "ELD", "LD2011_2014.txt"), delimiter=";", decimal=",")
+        # Set a name for date column
+        df.rename(columns={df.columns[0]: "Date"}, inplace=True)
+
+        # Only values after 2014-09-01 as in (Flunkert et al., 2017)
+        df["Date"] = pd.to_datetime(df["Date"], utc=True)
+        target_date_dt = pd.to_datetime("2014-09-01", utc=True)
+        df = df[df["Date"] >= target_date_dt]
+
+        
+        # Resample to hourly frequency and sum the values
+        df.set_index("Date", inplace=True)
+        df = df.resample('h').sum()
+
+        # MT_223 contains no readings
+        df.drop(columns=["MT_223"], inplace=True)
+
+        # Convert to numpy and add dimension
+        data = df.to_numpy().T
+        assert num_individuals <= data.shape[0], "Too many individuals for dataset"
+        data = data[:num_individuals]
+
+        data = np.expand_dims(data, -1)
+        #Scale data
+        scaler = MinMaxScaler()
+        data_scaled = scaler.fit_transform(np.concatenate(data))
+        data_scaled = data_scaled.reshape(data.shape)
+
+        x = []  # lists to store samples for all individuals
+        y = []
+        for time_series in data_scaled:
+            # Create sequences separately for each individual
+            xi, yi = to_sequences(time_series, lookback, horizon, stride)
+            x.append(xi)
+            y.append(yi)
+
+        num_samples_per_individual = len(x[0])
+        individual_indices = [(0 + num_samples_per_individual*i, num_samples_per_individual*(i+1)) for i in range(len(x))]
+
+        # Concatenate samples and save dataset
+        x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
+        dataset = IndividualizedDataset(x, y, individual_indices, scaler)
+        with open(os.path.join(path, "ELD.pkl"), "wb") as file:
+            pickle.dump(dataset, file)
+            print(f"Save data to {path}/ELD.pkl") 
+
+    return dataset 
+
+def preprocess_LCL_dataset(path, lookback, horizon, num_individuals, stride=1, **kwargs):
     """Get and preprocess the dataset."""
 
     dataset = None
@@ -143,7 +201,7 @@ def preprocess_LCL_dataset(path, lookback, horizon, num_individuals, stride=1):
     return dataset 
 
 
-def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, stride=1):
+def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, stride=1, **kwargs):
     """Get and preprocess the dataset."""
 
     dataset = None
@@ -196,7 +254,7 @@ def get_edf_time_series(edf_data, k_lead, num_time_steps):
     time_series = time_series.T                     # transpose to get sample dimension first
     return time_series[:num_time_steps, :k_lead]    # select first num_timesteps of the k first variables
 
-def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, stride=1, num_time_steps=75000):
+def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, stride=1, num_time_steps=75000, **kwargs):
     """Get and preprocess the dataset. Assuming subset of first 100 patients (EEG/000)."""
     # num_time_steps is the fixed number of steps to use from each individual; cutting the longer series and ignoring shorter ones
     # default: 75000 steps (equivalent to 5 minutes when sampling at 250Hz)
@@ -266,6 +324,18 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
             print(f"Save data to {path}/EEG.pkl") 
 
     return dataset
+
+def preprocess_dataset(dataset, path, lookback, horizon, num_individuals, **kwargs):
+    if dataset == "ECG":
+        return preprocess_ECG_dataset(path, lookback, horizon, num_individuals, **kwargs)
+    if dataset == "EEG":
+        return preprocess_EEG_dataset(path, lookback, horizon, num_individuals, **kwargs)
+    if dataset == "LCL":
+        return preprocess_LCL_dataset(path, lookback, horizon, num_individuals, **kwargs)
+    if dataset == "ELD":
+        return preprocess_ELD_dataset(path, lookback, horizon, num_individuals, **kwargs)
+    else:
+        raise NotImplementedError(f"Unknown dataset: {dataset}")
 
 
 def get_dataloaders(dataset: IndividualizedDataset, train_fraction=0.5, test_fraction=0.3, batch_size=128):
