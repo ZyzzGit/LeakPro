@@ -66,24 +66,37 @@ def preprocess_ELD_dataset(path, lookback, horizon, num_individuals, stride=1, *
         df = pd.read_csv(os.path.join(path, "ELD", "LD2011_2014.txt"), delimiter=";", decimal=",")
         # Set a name for date column
         df.rename(columns={df.columns[0]: "Date"}, inplace=True)
-
-        # Only values after 2014-09-01 as in (Flunkert et al., 2017)
         df["Date"] = pd.to_datetime(df["Date"], utc=True)
-        target_date_dt = pd.to_datetime("2014-09-01", utc=True)
-        df = df[df["Date"] >= target_date_dt]
-
         
         # Resample to hourly frequency and sum the values
         df.set_index("Date", inplace=True)
         df = df.resample('h').sum()
 
-        # MT_223 contains no readings
-        df.drop(columns=["MT_223"], inplace=True)
+        load_data = []
 
-        # Convert to numpy and add dimension
-        data = df.to_numpy().T
-        assert num_individuals <= data.shape[0], "Too many individuals for dataset"
-        data = data[:num_individuals]
+        for indiv in df.columns:
+            load = df[indiv]
+
+            load = np.array(load, dtype=np.float32)
+
+            # Find the index of the first non-zero element
+            first_non_zero = np.argmax(load != 0)
+        
+            # Find the index of the last non-zero element
+            last_non_zero = len(load) - np.argmax(load[::-1] != 0) - 1
+            
+            # Slice the array to remove the first and last zeros
+            load = load[first_non_zero:last_non_zero + 1]
+
+            load_data.append(load)
+
+        load_data.sort(key=lambda x: len(x), reverse=True)
+        assert num_individuals <= len(load_data), "Too many individuals for dataset"
+        load_data = load_data[:num_individuals]
+        min_length = min(len(load) for load in load_data)
+        load_data = [load[:min_length] for load in load_data]
+
+        data = np.array(load_data)
 
         data = np.expand_dims(data, -1)
         #Scale data
