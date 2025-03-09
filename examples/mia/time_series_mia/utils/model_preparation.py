@@ -1,12 +1,36 @@
 import os
 import torch
-import torch.nn as nn
 import pickle
+import numpy as np
 from tqdm import tqdm
-from torch import optim, cuda, no_grad, save
+from torch import nn, optim, cuda, no_grad, save
+
+def predict(model, loader, device, original_scale=False):
+    model.eval()
+    model.to(device)
+    all_targets = []
+    all_preds = []
+    with no_grad():
+        for data, target in loader:                
+            data = data.to(device)
+            pred = model(data).detach().cpu().numpy()
+            target = target.detach().cpu().numpy()
+            if original_scale:
+                pred_2D = pred.reshape(-1, pred.shape[-1])
+                target_2D = target.reshape(-1, target.shape[-1])
+
+                pred_descaled = loader.dataset.dataset.scaler.inverse_transform(pred_2D)
+                target_descaled = loader.dataset.dataset.scaler.inverse_transform(target_2D)
+
+                pred = pred_descaled.reshape(pred.shape)
+                target = target_descaled.reshape(target.shape)
+            all_preds.append(pred)
+            all_targets.append(target)
+    return np.concatenate(all_targets), np.concatenate(all_preds)
 
 def evaluate(model, loader, criterion, device, original_scale=False):
     model.eval()
+    model.to(device)
     loss = 0
     with no_grad():
         for data, target in loader:                

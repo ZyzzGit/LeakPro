@@ -1,10 +1,11 @@
-import os, sys, yaml, numpy as np, matplotlib.pyplot as plt, torch, random
+import os, sys, yaml, numpy as np, matplotlib.pyplot as plt, torch, pandas as pd
 
 project_root = os.path.abspath(os.path.join(os.getcwd(), "../../.."))
 sys.path.append(project_root)
 
-from examples.mia.time_series_mia.utils.data_preparation import preprocess_ECG_dataset, preprocess_EEG_dataset, preprocess_LCL_dataset, get_dataloaders
-from examples.mia.time_series_mia.utils.model_preparation import create_trained_model_and_metadata
+from examples.mia.time_series_mia.utils.data_preparation import preprocess_dataset, get_dataloaders
+from examples.mia.time_series_mia.utils.model_preparation import create_trained_model_and_metadata, evaluate, predict
+from examples.mia.time_series_mia.utils.set_seed import set_seed
 from examples.mia.time_series_mia.utils.models.LSTM import LSTM
 from examples.mia.time_series_mia.utils.models.TCN import TCN
 from examples.mia.time_series_mia.utils.models.DLinear import DLinear
@@ -54,17 +55,17 @@ if __name__ == "__main__":
 
     # Get data loaders
     path = os.path.join(os.getcwd(), data_dir)
-    target_data_file = audit_config["target"]["data_path"].split('/')[-1]
+    target_data_path = audit_config["target"]["data_path"]
+    target_data_file = os.path.basename(target_data_path) # Only look at file name of target data path
+    target_data_file = os.path.splitext(target_data_file)[0]
 
-    if dataset == 'ECG' and target_data_file == 'ECG.pkl':
-        dataset = preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=k_lead, stride=stride)
-    elif dataset == 'EEG' and target_data_file == 'EEG.pkl':
-        dataset = preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=k_lead, stride=stride)
-    elif dataset == 'LCL' and target_data_file == 'LCL.pkl':
-        dataset = preprocess_LCL_dataset(path, lookback, horizon, num_individuals, stride=stride)
-    else:
-        raise Exception(f"Received unknown dataset or mismatching target file: dataset={dataset}, target={target_data_file}.")
+    if target_data_file != dataset:
+        raise Exception(f"Received unknown dataset or mismatching target file: dataset={dataset}, target={target_data_path}.")
 
+    set_seed(random_seed) # Set seed before and after, to ensure same randomness if you process or dont process dataset (dataset already processed)
+    dataset = preprocess_dataset(dataset, path, lookback, horizon, num_individuals, k_lead=k_lead, stride=stride)
+
+    set_seed(random_seed)
     train_loader, test_loader = get_dataloaders(dataset, train_fraction, test_fraction, batch_size=batch_size)
 
     # Train the model
@@ -85,6 +86,19 @@ if __name__ == "__main__":
         raise NotImplementedError()
 
     train_loss, test_loss = create_trained_model_and_metadata(model, train_loader, test_loader, epochs, optimizer)
+
+    from examples.mia.time_series_mia.utils.metrics import mse, rmse, nrmse, mae, nd
+    # Print metrics on final model, unscaled vs scaled, train and test
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    train = predict(model, train_loader, device, original_scale=False)
+    test  = predict(model, test_loader, device, original_scale=False)
+    unscaled_train = predict(model, train_loader, device, original_scale=True)
+    unscaled_test  = predict(model, test_loader, device, original_scale=True)
+
+    metrics, names = [mse, mae, rmse, nrmse, nd], ["MSE", "MAE", "RMSE", "NRMSE", "ND"]
+    values = [[m(*p) for m in metrics] for p in [train, test, unscaled_train, unscaled_test]]
+    print(pd.DataFrame(values, columns=names, index=["Train", "Test", "Unscaled train", "Unscaled train"]))
 
     # Prepare leakpro object
     leakpro = LeakPro(IndividualizedInputHandler, audit_config_path)
