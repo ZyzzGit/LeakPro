@@ -1,5 +1,5 @@
 from ts2vec import TS2Vec
-from torch import cuda, is_tensor
+from torch import cuda, is_tensor, os
 
 def train_ts2vec(train_data, num_variables, batch_size=256):
 

@@ -9,10 +9,11 @@ from mne.io import read_raw_edf
 from leakpro.utils.logger import logger
 
 class IndividualizedDataset(Dataset):
-    def __init__(self, x:tensor, y:tensor, individual_indices:list[tuple[int,int]], scaler):
+    def __init__(self, x:tensor, y:tensor, individual_indices:list[tuple[int,int]], scaler, stride):
         self.x = x
         self.y = y
         self.scaler = scaler
+        self.stride = stride
         
         self.lookback = x.size(1)
         self.horizon = y.size(1)
@@ -61,7 +62,7 @@ def preprocess_ELD_dataset(path, lookback, horizon, num_individuals, stride=1, *
         with open(os.path.join(path, "ELD.pkl"), "rb") as f:
             dataset = joblib.load(f)
 
-    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals:
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.stride != stride:
 
         df = pd.read_csv(os.path.join(path, "ELD", "LD2011_2014.txt"), delimiter=";", decimal=",")
         # Set a name for date column
@@ -117,7 +118,7 @@ def preprocess_ELD_dataset(path, lookback, horizon, num_individuals, stride=1, *
 
         # Concatenate samples and save dataset
         x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
-        dataset = IndividualizedDataset(x, y, individual_indices, scaler)
+        dataset = IndividualizedDataset(x, y, individual_indices, scaler, stride)
         with open(os.path.join(path, "ELD.pkl"), "wb") as file:
             pickle.dump(dataset, file)
             print(f"Save data to {path}/ELD.pkl") 
@@ -132,7 +133,7 @@ def preprocess_LCL_dataset(path, lookback, horizon, num_individuals, stride=1, *
         with open(os.path.join(path, "LCL.pkl"), "rb") as f:
             dataset = joblib.load(f)
 
-    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals:
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.stride != stride:
         
         df = pd.read_csv(os.path.join(path, "LCL", "daily_dataset.csv"))
         individuals = list(df["LCLid"].value_counts(sort=True, ascending=False)[:num_individuals].index)
@@ -206,7 +207,7 @@ def preprocess_LCL_dataset(path, lookback, horizon, num_individuals, stride=1, *
 
         # Concatenate samples and save dataset
         x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
-        dataset = IndividualizedDataset(x, y, individual_indices, scaler)
+        dataset = IndividualizedDataset(x, y, individual_indices, scaler, stride)
         with open(os.path.join(path, "LCL.pkl"), "wb") as file:
             pickle.dump(dataset, file)
             print(f"Save data to {path}/LCL.pkl") 
@@ -223,7 +224,7 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, 
         with open(os.path.join(path, "ECG.pkl"), "rb") as f:
             dataset = joblib.load(f)
 
-    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals:
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.stride != stride or dataset.num_variables != k_lead:
         raw_data_path = os.path.join(path, 'ECG')
         individual_files = random.sample(os.listdir(raw_data_path), num_individuals)
         all_raw_time_series = np.array(list(filter(
@@ -254,7 +255,7 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, 
 
         # Concatenate samples and save dataset
         x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
-        dataset = IndividualizedDataset(x, y, individual_indices, scaler)
+        dataset = IndividualizedDataset(x, y, individual_indices, scaler, stride)
         with open(os.path.join(path, "ECG.pkl"), "wb") as file:
             pickle.dump(dataset, file)
             print(f"Save data to {path}/ECG.pkl") 
@@ -277,7 +278,7 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
         with open(os.path.join(path, "EEG.pkl"), "rb") as f:
             dataset = joblib.load(f)
 
-    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.num_variables != k_lead:
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.stride != stride or dataset.num_variables != k_lead:
         data_path = os.path.join(path, 'EEG/000')
         subjects = os.listdir(data_path)
         random.shuffle(subjects)   # randomize order of individuals
@@ -331,7 +332,7 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
 
         # Concatenate samples and save dataset
         x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
-        dataset = IndividualizedDataset(x, y, individual_indices, scaler)
+        dataset = IndividualizedDataset(x, y, individual_indices, scaler, stride)
         with open(f"{path}/EEG.pkl", "wb") as file:
             pickle.dump(dataset, file)
             print(f"Save data to {path}/EEG.pkl") 

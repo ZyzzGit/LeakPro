@@ -45,14 +45,6 @@ if __name__ == "__main__":
     stride = train_config["data"]["stride"]
     k_lead = train_config["data"]["k_lead"] # number of leading variables to use
 
-    torch.manual_seed(random_seed)
-    torch.cuda.manual_seed(random_seed)
-    torch.cuda.manual_seed_all(random_seed)
-    np.random.seed(random_seed)
-    random.seed(random_seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
-
     # Get data loaders
     path = os.path.join(os.getcwd(), data_dir)
     target_data_path = audit_config["target"]["data_path"]
@@ -98,7 +90,7 @@ if __name__ == "__main__":
 
     metrics, names = [mse, mae, rmse, nrmse, nd], ["MSE", "MAE", "RMSE", "NRMSE", "ND"]
     values = [[m(*p) for m in metrics] for p in [train, test, unscaled_train, unscaled_test]]
-    print(pd.DataFrame(values, columns=names, index=["Train", "Test", "Unscaled train", "Unscaled train"]))
+    print(pd.DataFrame(values, columns=names, index=["Train", "Test", "Unscaled train", "Unscaled test"]))
 
     # Prepare leakpro object
     leakpro = LeakPro(IndividualizedInputHandler, audit_config_path)
