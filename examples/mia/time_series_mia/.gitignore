@@ -9,3 +9,7 @@ data_play.ipynb
 model_play.ipynb
 audit.yaml
 train_config.yaml
+features.npy
+mask.npy
+preds.npy
+targets.npy

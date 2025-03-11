@@ -9,6 +9,7 @@ from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
 from leakpro.metrics.attack_result import MIAResult
 from leakpro.utils.import_helper import Self
+from leakpro.signals.signal import Signal
 from leakpro.utils.logger import logger
 from tqdm import tqdm
 
@@ -111,7 +112,7 @@ class AttackGimmePred(AbstractMIA):
         in_indices_masks = in_indices_masks.swapaxes(0, -1)
 
         data_loader = self.handler.get_dataloader(np.arange(self.population_size), batch_size=512)
-        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
+        assert Signal._is_shuffling(None, data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
 
         preds = []
         targets = []

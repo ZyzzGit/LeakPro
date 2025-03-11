@@ -32,7 +32,7 @@ class AttackFactoryMIA:
         "ensemble": AttackEnsemble,
         "rmia_direct": AttackRMIADirect,
         "gimmedata": AttackGimmeData,
-        "gimmedata": AttackGimmePred,
+        "gimmepred": AttackGimmePred,
     }
 
     # Shared variables for all attacks
