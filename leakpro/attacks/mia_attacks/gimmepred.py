@@ -8,12 +8,12 @@ from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
 from leakpro.metrics.attack_result import MIAResult
-from leakpro.signals.signal import TrendLoss, SeasonalityLoss, MSELoss, MASELoss
 from leakpro.utils.import_helper import Self
 from leakpro.utils.logger import logger
+from tqdm import tqdm
 
 
-class AttackGimmeData(AbstractMIA):
+class AttackGimmePred(AbstractMIA):
     """Implementation of the Give me data attack."""
 
     def __init__(self:Self,
@@ -49,7 +49,6 @@ class AttackGimmeData(AbstractMIA):
         self.num_shadow_models = configs.get("num_shadow_models", 50) 
         self.training_data_fraction = configs.get("training_data_fraction", 0.5)
         self.online = configs.get("online", True) 
-        self.signals = [TrendLoss(), SeasonalityLoss(), MSELoss(), MASELoss()] # Change this to be configurable
 
 
         # Define the validation dictionary as: {parameter_name: (parameter, min_value, max_value)}
@@ -87,11 +86,11 @@ class AttackGimmeData(AbstractMIA):
         Signals are computed on the auxiliary model(s) and dataset.
         """
 
-        logger.info("Preparing shadow models for Give me data attack")
+        logger.info("Preparing shadow models for Give me pred attack")
         # Check number of shadow models that are available
 
         # sample dataset to compute histogram
-        logger.info("Preparing attack data for training the Give me data attack")
+        logger.info("Preparing attack data for training the Give me pred attack")
 
         # Get all available indices for attack dataset including training and test data
         self.attack_data_indices = self.sample_indices_from_population(include_train_indices = self.online,
@@ -111,24 +110,38 @@ class AttackGimmeData(AbstractMIA):
         in_indices_masks = ShadowModelHandler().get_in_indices_mask(self.shadow_model_indices, np.arange(self.population_size)).T
         in_indices_masks = in_indices_masks.swapaxes(0, -1)
 
+        data_loader = self.handler.get_dataloader(np.arange(self.population_size), batch_size=512)
+        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
 
-        features = [np.swapaxes(signal(self.shadow_models,
-                                        self.handler,
-                                        np.arange(self.population_size),
-                                        batch_size=512), 0, 1)
-                    for signal in self.signals]
+        preds = []
+        targets = []
+        for m, model in enumerate(self.shadow_models):
+            # Initialize a matrix to store the SMAPE loss for the current model
+            model_targets = []
+            model_preds = []
+
+            for data, target in tqdm(data_loader, desc=f"Getting predictions for model {m+1}/ {len(self.shadow_models)}"):
+                pred = model.get_logits(data)
+                target = target.numpy()
+                model_targets.extend(target)
+                model_preds.extend(pred)
+
+            model_targets = np.array(model_targets, dtype=np.float32)
+            model_preds = np.array(model_preds, dtype=np.float32)
+            targets.append(model_targets)
+            preds.append(model_preds)
+        targets = np.array(targets).swapaxes(0, 1)
+        preds = np.array(preds).swapaxes(0, 1)
         
-        features = np.array(features)
-        features = np.swapaxes(features, 0, -1)
-        features = np.swapaxes(features, 0, 1)
-
-        np.save("features", features)
+        np.save("preds", preds)
+        np.save("targets", targets)
         np.save("mask", in_indices_masks)
 
 
 
         logger.info(in_indices_masks.shape)
-        logger.info(features.shape)
+        logger.info(targets.shape)
+        logger.info(preds.shape)
             
 
 

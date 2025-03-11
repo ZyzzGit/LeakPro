@@ -11,6 +11,7 @@ from leakpro.attacks.mia_attacks.rmia_direct import AttackRMIADirect
 from leakpro.attacks.mia_attacks.yoqo import AttackYOQO
 from leakpro.attacks.mia_attacks.ensemble import AttackEnsemble
 from leakpro.attacks.mia_attacks.gimmedata import AttackGimmeData
+from leakpro.attacks.mia_attacks.gimmepred import AttackGimmePred
 from leakpro.attacks.utils.distillation_model_handler import DistillationModelHandler
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
@@ -31,6 +32,7 @@ class AttackFactoryMIA:
         "ensemble": AttackEnsemble,
         "rmia_direct": AttackRMIADirect,
         "gimmedata": AttackGimmeData,
+        "gimmedata": AttackGimmePred,
     }
 
     # Shared variables for all attacks
