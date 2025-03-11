@@ -6,12 +6,14 @@ from torch import tensor, float32
 from torch.utils.data import DataLoader, Dataset, Subset
 from sklearn.model_selection import train_test_split
 from mne.io import read_raw_edf
+from leakpro.utils.logger import logger
 
 class IndividualizedDataset(Dataset):
-    def __init__(self, x:tensor, y:tensor, individual_indices:list[tuple[int,int]], scaler):
+    def __init__(self, x:tensor, y:tensor, individual_indices:list[tuple[int,int]], scaler, stride):
         self.x = x
         self.y = y
         self.scaler = scaler
+        self.stride = stride
         
         self.lookback = x.size(1)
         self.horizon = y.size(1)
@@ -52,7 +54,78 @@ def to_sequences(data, lookback, horizon, stride):
         y.append(data[t + lookback:t + lookback + horizon, :])
     return tensor(np.array(x), dtype=float32), tensor(np.array(y), dtype=float32)
 
-def preprocess_LCL_dataset(path, lookback, horizon, num_individuals, stride=1):
+def preprocess_ELD_dataset(path, lookback, horizon, num_individuals, stride=1, **kwargs):
+    """Get and preprocess the dataset."""
+
+    dataset = None
+    if os.path.exists(os.path.join(path, "ELD.pkl")):
+        with open(os.path.join(path, "ELD.pkl"), "rb") as f:
+            dataset = joblib.load(f)
+
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.stride != stride:
+
+        df = pd.read_csv(os.path.join(path, "ELD", "LD2011_2014.txt"), delimiter=";", decimal=",")
+        # Set a name for date column
+        df.rename(columns={df.columns[0]: "Date"}, inplace=True)
+        df["Date"] = pd.to_datetime(df["Date"], utc=True)
+        
+        # Resample to hourly frequency and sum the values
+        df.set_index("Date", inplace=True)
+        df = df.resample('h').sum()
+
+        load_data = []
+
+        for indiv in df.columns:
+            load = df[indiv]
+
+            load = np.array(load, dtype=np.float32)
+
+            # Find the index of the first non-zero element
+            first_non_zero = np.argmax(load != 0)
+        
+            # Find the index of the last non-zero element
+            last_non_zero = len(load) - np.argmax(load[::-1] != 0) - 1
+            
+            # Slice the array to remove the first and last zeros
+            load = load[first_non_zero:last_non_zero + 1]
+
+            load_data.append(load)
+
+        load_data.sort(key=lambda x: len(x), reverse=True)
+        assert num_individuals <= len(load_data), "Too many individuals for dataset"
+        load_data = load_data[:num_individuals]
+        min_length = min(len(load) for load in load_data)
+        load_data = [load[:min_length] for load in load_data]
+
+        data = np.array(load_data)
+
+        data = np.expand_dims(data, -1)
+        #Scale data
+        scaler = MinMaxScaler()
+        data_scaled = scaler.fit_transform(np.concatenate(data))
+        data_scaled = data_scaled.reshape(data.shape)
+
+        x = []  # lists to store samples for all individuals
+        y = []
+        for time_series in data_scaled:
+            # Create sequences separately for each individual
+            xi, yi = to_sequences(time_series, lookback, horizon, stride)
+            x.append(xi)
+            y.append(yi)
+
+        num_samples_per_individual = len(x[0])
+        individual_indices = [(0 + num_samples_per_individual*i, num_samples_per_individual*(i+1)) for i in range(len(x))]
+
+        # Concatenate samples and save dataset
+        x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
+        dataset = IndividualizedDataset(x, y, individual_indices, scaler, stride)
+        with open(os.path.join(path, "ELD.pkl"), "wb") as file:
+            pickle.dump(dataset, file)
+            print(f"Save data to {path}/ELD.pkl") 
+
+    return dataset 
+
+def preprocess_LCL_dataset(path, lookback, horizon, num_individuals, stride=1, **kwargs):
     """Get and preprocess the dataset."""
 
     dataset = None
@@ -60,7 +133,7 @@ def preprocess_LCL_dataset(path, lookback, horizon, num_individuals, stride=1):
         with open(os.path.join(path, "LCL.pkl"), "rb") as f:
             dataset = joblib.load(f)
 
-    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals:
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.stride != stride:
         
         df = pd.read_csv(os.path.join(path, "LCL", "daily_dataset.csv"))
         individuals = list(df["LCLid"].value_counts(sort=True, ascending=False)[:num_individuals].index)
@@ -134,7 +207,7 @@ def preprocess_LCL_dataset(path, lookback, horizon, num_individuals, stride=1):
 
         # Concatenate samples and save dataset
         x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
-        dataset = IndividualizedDataset(x, y, individual_indices, scaler)
+        dataset = IndividualizedDataset(x, y, individual_indices, scaler, stride)
         with open(os.path.join(path, "LCL.pkl"), "wb") as file:
             pickle.dump(dataset, file)
             print(f"Save data to {path}/LCL.pkl") 
@@ -142,7 +215,7 @@ def preprocess_LCL_dataset(path, lookback, horizon, num_individuals, stride=1):
     return dataset 
 
 
-def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, stride=1):
+def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, stride=1, **kwargs):
     """Get and preprocess the dataset."""
 
     dataset = None
@@ -151,7 +224,7 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, 
         with open(os.path.join(path, "ECG.pkl"), "rb") as f:
             dataset = joblib.load(f)
 
-    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals:
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.stride != stride or dataset.num_variables != k_lead:
         raw_data_path = os.path.join(path, 'ECG')
         individual_files = random.sample(os.listdir(raw_data_path), num_individuals)
         all_raw_time_series = np.array(list(filter(
@@ -182,7 +255,7 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, 
 
         # Concatenate samples and save dataset
         x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
-        dataset = IndividualizedDataset(x, y, individual_indices, scaler)
+        dataset = IndividualizedDataset(x, y, individual_indices, scaler, stride)
         with open(os.path.join(path, "ECG.pkl"), "wb") as file:
             pickle.dump(dataset, file)
             print(f"Save data to {path}/ECG.pkl") 
@@ -190,27 +263,29 @@ def preprocess_ECG_dataset(path, lookback, horizon, num_individuals, k_lead=12, 
     return dataset
 
 
-def get_edf_time_series(edf_data, k_lead, num_timesteps):
+def get_edf_time_series(edf_data, k_lead, num_time_steps):
     time_series = edf_data.get_data()
-    time_series = time_series.T # transpose to get sample dimension first
-    return time_series[:num_timesteps, :k_lead] # select first num_timesteps of the k first variables
+    time_series = time_series.T                     # transpose to get sample dimension first
+    return time_series[:num_time_steps, :k_lead]    # select first num_timesteps of the k first variables
 
-def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, stride=1):
+def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, stride=1, num_time_steps=75000, **kwargs):
     """Get and preprocess the dataset. Assuming subset of first 100 patients (EEG/000)."""
+    # num_time_steps is the fixed number of steps to use from each individual; cutting the longer series and ignoring shorter ones
+    # default: 75000 steps (equivalent to 5 minutes when sampling at 250Hz)
 
     dataset = None
     if os.path.exists(os.path.join(path, "EEG.pkl")):
         with open(os.path.join(path, "EEG.pkl"), "rb") as f:
             dataset = joblib.load(f)
 
-    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.num_variables != k_lead:
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.stride != stride or dataset.num_variables != k_lead:
         data_path = os.path.join(path, 'EEG/000')
         subjects = os.listdir(data_path)
         random.shuffle(subjects)   # randomize order of individuals
 
-        individuals = []    # individuals[i] is the largest token (time series) of individual i
+        individuals = []    # individuals[i] is the token (time series) of individual i closest to num_time_steps (but not shorter) in length
         for subject in subjects:
-            largest_token = None
+            best_token = None
             for session in os.listdir(os.path.join(data_path, subject)):
                 dirs = os.listdir(os.path.join(data_path, f'{subject}/{session}'))
                 if len(dirs) > 1:
@@ -219,19 +294,21 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
                 for token in os.listdir(os.path.join(data_path, f'{subject}/{session}/{montage_definition}')):
                     file = os.path.join(data_path, f'{subject}/{session}/{montage_definition}/{token}')
                     data = read_raw_edf(file, verbose=False)
-                    if data.info['sfreq'] != 250:   # only keep data sampled at a frequency of 250 Hz
-                        continue
-                    if largest_token == None or data.n_times > largest_token.n_times:
-                        largest_token = data
+                    if data.info['sfreq'] != 250 or data.n_times < num_time_steps:
+                        continue    # skip data not sampled at a frequency of 250 Hz or long enough
+                    if best_token == None or data.n_times < best_token.n_times:
+                        best_token = data   # update best token to be data closest to num_time_steps
 
-            if largest_token:
-                individuals.append(largest_token)
+            if best_token:
+                individuals.append(best_token)
 
-        # Get the largest individual time series and trim to the minimum length
-        individuals.sort(key=lambda ts: ts.n_times, reverse=True)
+        # Get the shortest individual time series and trim to the requested length
+        # (this ensures we discard as few time steps as possible)
+        individuals.sort(key=lambda ts: ts.n_times)
         selected_individuals = individuals[:num_individuals]
-        min_length = selected_individuals[-1].n_times
-        trimmed_selected_time_series = np.array([get_edf_time_series(ind, k_lead, min_length) for ind in selected_individuals])
+        if len(selected_individuals) < num_individuals:
+            logger.warning(f"num_individuals = {num_individuals} but only found {len(selected_individuals)} with num_time_steps >= {num_time_steps}. Proceeding with {len(selected_individuals)} individuals.")
+        trimmed_selected_time_series = np.array([get_edf_time_series(ind, k_lead, num_time_steps) for ind in selected_individuals])
 
         # IQR scaling
         scaler = RobustScaler()
@@ -255,12 +332,24 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
 
         # Concatenate samples and save dataset
         x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
-        dataset = IndividualizedDataset(x, y, individual_indices, scaler)
+        dataset = IndividualizedDataset(x, y, individual_indices, scaler, stride)
         with open(f"{path}/EEG.pkl", "wb") as file:
             pickle.dump(dataset, file)
             print(f"Save data to {path}/EEG.pkl") 
 
     return dataset
+
+def preprocess_dataset(dataset, path, lookback, horizon, num_individuals, **kwargs):
+    if dataset == "ECG":
+        return preprocess_ECG_dataset(path, lookback, horizon, num_individuals, **kwargs)
+    if dataset == "EEG":
+        return preprocess_EEG_dataset(path, lookback, horizon, num_individuals, **kwargs)
+    if dataset == "LCL":
+        return preprocess_LCL_dataset(path, lookback, horizon, num_individuals, **kwargs)
+    if dataset == "ELD":
+        return preprocess_ELD_dataset(path, lookback, horizon, num_individuals, **kwargs)
+    else:
+        raise NotImplementedError(f"Unknown dataset: {dataset}")
 
 
 def get_dataloaders(dataset: IndividualizedDataset, train_fraction=0.5, test_fraction=0.3, batch_size=128):

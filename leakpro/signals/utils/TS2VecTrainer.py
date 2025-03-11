@@ -1,5 +1,5 @@
 from ts2vec import TS2Vec
-from torch import cuda, is_tensor
+from torch import cuda, is_tensor, os
 
 def train_ts2vec(train_data, num_variables, batch_size=256):
 
@@ -18,4 +18,7 @@ def train_ts2vec(train_data, num_variables, batch_size=256):
     model.fit(
         train_data
     )
+    
+    if not os.path.exists('data'):
+        os.makedirs('data')
     model.save(f'data/ts2vec_model.pkl')

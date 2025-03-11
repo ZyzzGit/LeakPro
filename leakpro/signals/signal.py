@@ -30,7 +30,9 @@ def get_signal_from_name(signal_name):
         "TrendLoss": TrendLoss(),
         "MSELoss": MSELoss(),
         "MASELoss": MASELoss(),
-        "TS2VecLoss": TS2VecLoss()
+        "TS2VecLoss": TS2VecLoss(),
+        "SMAPELoss": SMAPELoss(),
+        "RescaledSMAPELoss": RescaledSMAPELoss(),
     }[signal_name]
 
 class Signal(ABC):
@@ -642,5 +644,108 @@ class MSMDistance(Signal):
 
             model_msm_distance = np.array(model_msm_distance)
             results.append(model_msm_distance)
+
+        return results
+
+class SMAPELoss(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the per-sample MASE loss of a time-series model output.
+    """
+
+    def __call__(
+        self:Self,
+        models: List[Model],
+        handler: AbstractInputHandler,
+        indices: np.ndarray,
+        batch_size: int = 32,
+    ) -> List[np.ndarray]:
+        """Built-in call method.
+
+        Args:
+        ----
+            models: List of models that can be queried.
+            handler: The input handler object.
+            indices: List of indices in population dataset that can be queried from handler.
+            batch_size: Integer to determine batch size for dataloader.
+
+        Returns:
+        -------
+            The signal value.
+
+        """
+        # Compute the signal for each model
+        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
+
+        results = []
+        for m, model in enumerate(models):
+            # Initialize a matrix to store the SMAPE loss for the current model
+            model_smape_loss = []
+
+            for data, target in tqdm(data_loader, desc=f"Getting SMAPE loss for model {m+1}/ {len(models)}"):
+                output = model.get_logits(data)
+                target = target.numpy()
+                numerator = np.abs(output - target) 
+                denominator = np.abs(output) + np.abs(target) + 1e-30
+                fraction = numerator / denominator
+                smape_loss = np.mean(fraction, axis=(1,2))
+
+                model_smape_loss.extend(smape_loss)
+
+            model_smape_loss = np.array(model_smape_loss)
+            results.append(model_smape_loss)
+
+        return results
+    
+class RescaledSMAPELoss(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the per-sample MASE loss of a time-series model output.
+    """
+
+    def __call__(
+        self:Self,
+        models: List[Model],
+        handler: AbstractInputHandler,
+        indices: np.ndarray,
+        batch_size: int = 32,
+    ) -> List[np.ndarray]:
+        """Built-in call method.
+
+        Args:
+        ----
+            models: List of models that can be queried.
+            handler: The input handler object.
+            indices: List of indices in population dataset that can be queried from handler.
+            batch_size: Integer to determine batch size for dataloader.
+
+        Returns:
+        -------
+            The signal value.
+
+        """
+        # Compute the signal for each model
+        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
+
+        results = []
+        for m, model in enumerate(models):
+            # Initialize a matrix to store the SMAPE loss for the current model
+            model_smape_loss = []
+
+            for data, target in tqdm(data_loader, desc=f"Getting SMAPE loss for model {m+1}/ {len(models)}"):
+                output = model.get_logits(data)
+                target = target.numpy()
+                numerator = np.abs(output - target) 
+                denominator = np.abs(output) + np.abs(target) + 1e-30
+                fraction = numerator / denominator
+                smape_loss = np.mean(fraction, axis=(1,2))
+                rescaled_smape = np.log(smape_loss / (1 - smape_loss + 1e-30))
+
+                model_smape_loss.extend(rescaled_smape)
+
+            model_smape_loss = np.array(model_smape_loss)
+            results.append(model_smape_loss)
 
         return results

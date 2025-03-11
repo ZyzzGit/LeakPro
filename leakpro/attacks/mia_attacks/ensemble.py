@@ -21,7 +21,7 @@ from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
 from leakpro.metrics.attack_result import MIAResult
-from leakpro.signals.signal import TrendLoss, SeasonalityLoss
+from leakpro.signals.signal import get_signal_from_name
 from leakpro.utils.import_helper import Self
 from leakpro.utils.logger import logger
 
@@ -64,9 +64,9 @@ class AttackEnsemble(AbstractMIA):
         self.num_pairs = configs.get("num_pairs", 20)
         self.num_runs = configs.get("num_runs", 5)
         self.training_data_fraction = configs.get("training_data_fraction", 0.5)
-        self.attack_data_fraction = configs.get("attack_data_fraction", 0.1)
         self.audit = configs.get("audit", False)
-        self.signals = [TrendLoss(), SeasonalityLoss()] # Change this to be configurable
+        self.signal_names = configs.get("signals", ["TrendLoss", "SeasonalityLoss"]) # [TrendLoss(), SeasonalityLoss()]
+        self.signals = [get_signal_from_name(signal_name) for signal_name in self.signal_names]
         self.online = True
 
 
@@ -77,7 +77,6 @@ class AttackEnsemble(AbstractMIA):
             "num_pairs": (self.num_pairs, 1, None),
             "num_runs": (self.num_runs, 1, None),
             "training_data_fraction": (self.training_data_fraction, 0, 1),
-            "attack_data_fraction": (self.attack_data_fraction, 0, 1),
         }
 
         # Validate parameters
@@ -166,8 +165,9 @@ class AttackEnsemble(AbstractMIA):
                 current_model = self.shadow_models[instance]
 
                 # Get indices which the current shadow model is trained or not trained on
-                in_indices = self.attack_data_indices[self.in_indices_masks[:, instance]]
-                out_indices = self.attack_data_indices[self.out_indices_masks[:, instance]]
+                logger.info(f"{self.in_indices_masks=}")
+                in_indices = self.audit_data_indices[self.in_indices_masks[:, instance]]
+                out_indices = self.audit_data_indices[self.out_indices_masks[:, instance]]
 
             # Choose a subset of these to train the membership classifiers on
             in_indices = np.random.choice(in_indices, self.subset_size * self.num_pairs, replace=False)
