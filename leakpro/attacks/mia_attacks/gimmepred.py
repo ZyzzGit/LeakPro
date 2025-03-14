@@ -124,12 +124,14 @@ class AttackGimmePred(AbstractMIA):
             for data, target in tqdm(data_loader, desc=f"Getting predictions for model {m+1}/ {len(self.shadow_models)}"):
                 pred = model.get_logits(data)
                 target = target.numpy()
-                model_targets.extend(target)
+                if m == 0:
+                    model_targets.extend(target)
                 model_preds.extend(pred)
 
-            model_targets = np.array(model_targets, dtype=np.float32)
+            if m == 0:
+                model_targets = np.array(model_targets, dtype=np.float32)
+                targets.append(model_targets)
             model_preds = np.array(model_preds, dtype=np.float32)
-            targets.append(model_targets)
             preds.append(model_preds)
         targets = np.array(targets).swapaxes(0, 1)
         preds = np.array(preds).swapaxes(0, 1)
