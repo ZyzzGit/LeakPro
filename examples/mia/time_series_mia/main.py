@@ -11,6 +11,7 @@ from examples.mia.time_series_mia.utils.models.TCN import TCN
 from examples.mia.time_series_mia.utils.models.DLinear import DLinear
 from examples.mia.time_series_mia.utils.models.NBeats import NBeats
 from examples.mia.time_series_mia.utils.models.WaveNet import WaveNet
+from examples.mia.time_series_mia.utils.models.Bromick import Bromick
 
 from data_handler import IndividualizedInputHandler
 from leakpro import LeakPro
@@ -74,6 +75,8 @@ if __name__ == "__main__":
         model = NBeats(input_dim, lookback, horizon)
     elif model_name == "WaveNet":
         model = WaveNet(input_dim, horizon)
+    elif model_name == "Bromick" or model_name == "Bhowmick":
+        model = Bromick(input_dim, horizon)
     else:
         raise NotImplementedError()
 
