@@ -3,7 +3,7 @@ import torch.nn as nn
 class LSTM(nn.Module):
     """LSTM for multi-variate forecasting"""
     
-    def __init__(self, input_dim, horizon, hidden_dim = 64, num_layers = 1, bidirectional = False):
+    def __init__(self, input_dim, horizon, hidden_dim=64, num_layers=2, bidirectional = False):
         super().__init__()
         self.init_params = {"input_dim": input_dim,
                             "horizon": horizon,
