@@ -7,6 +7,7 @@ from torch import cuda, optim
 from torch.nn import MSELoss
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from leakpro.schemas import TrainingOutput
 
 from leakpro import AbstractInputHandler
 
@@ -32,7 +33,7 @@ class IndividualizedInputHandler(AbstractInputHandler):
         criterion: torch.nn.Module = None,
         optimizer: optim.Optimizer = None,
         epochs: int = None,
-    ) -> dict:
+    ) -> TrainingOutput:
         """Model training procedure."""
 
         # read hyperparams for training (the parameters for the dataloader are defined in get_dataloader):
@@ -59,7 +60,10 @@ class IndividualizedInputHandler(AbstractInputHandler):
                 train_loss += loss.item()
 
         model.to("cpu")
-        return {"model": model, "metrics": {"loss": train_loss, "accuracy": None}}
+
+        output_dict = {"model": model, "metrics": {"loss": train_loss}}
+        output = TrainingOutput(**output_dict)
+        return output
     
     def sample_shadow_indices(self, shadow_population:list, data_fraction:float) -> np.ndarray:
         """Samples data indices from shadow population by individuals"""
