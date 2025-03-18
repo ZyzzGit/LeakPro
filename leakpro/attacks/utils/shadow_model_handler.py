@@ -136,7 +136,11 @@ class ShadowModelHandler(ModelHandler):
 
         for i in indices_to_use:
             # Get dataloader
-            data_indices = np.random.choice(shadow_population, data_size, replace=False)
+            if hasattr(self.handler, "sample_shadow_indices") and callable(self.handler.sample_shadow_indices):
+                # Use custom shadow model index sampler if implemented
+                data_indices = self.handler.sample_shadow_indices(shadow_population, training_fraction)
+            else:
+                data_indices = np.random.choice(shadow_population, data_size, replace=False)
             data_loader = self.handler.get_dataloader(data_indices, self.batch_size)
 
             # Get shadow model blueprint

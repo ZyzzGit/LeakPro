@@ -19,7 +19,8 @@ from leakpro.utils.logger import add_file_handler, logger
 modality_extensions = {"tabular": TabularExtension,
                        "image":ImageExtension,
                        "text":None,
-                       "graph":None}
+                       "graph":None,
+                       "time_series":None}
 
 class LeakPro:
     """Main class for LeakPro."""

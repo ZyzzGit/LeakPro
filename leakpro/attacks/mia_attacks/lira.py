@@ -12,7 +12,7 @@ from leakpro.attacks.utils.boosting import Memorization
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.mia_handler import MIAHandler
 from leakpro.metrics.attack_result import MIAResult
-from leakpro.signals.signal import ModelRescaledLogits
+from leakpro.signals.signal import get_signal_from_name
 from leakpro.utils.import_helper import Self
 from leakpro.utils.logger import logger
 
@@ -23,6 +23,7 @@ class AttackLiRA(AbstractMIA):
     class AttackConfig(BaseModel):
         """Configuration for the LiRA attack."""
 
+        signal_name: str = Field(default="ModelRescaledLogits", description="What signal to use.")
         num_shadow_models: int = Field(default=1, ge=1, description="Number of shadow models")
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
         online: bool = Field(default=False, description="Online vs offline attack")
@@ -78,7 +79,7 @@ class AttackLiRA(AbstractMIA):
                     There is no data left for the shadow models.")
 
         self.shadow_models = []
-        self.signal = ModelRescaledLogits()
+        self.signal = get_signal_from_name(self.signal_name)
 
     def description(self:Self) -> dict:
         """Return a description of the attack."""
@@ -219,15 +220,17 @@ class AttackLiRA(AbstractMIA):
             return self._fixed_variance(logits, mask, is_in)
 
         # Variance calculation as in the paper ( Membership Inference Attacks From First Principles )
-        if var_calculation == "carlini":
+        elif var_calculation == "carlini":
             return self._carlini_variance(logits, mask, is_in)
 
         # Variance calculation as in the paper ( Membership Inference Attacks From First Principles )
         #   but check IN and OUT samples individualy
-        if var_calculation == "individual_carlini":
+        elif var_calculation == "individual_carlini":
             return self._individual_carlini(logits, mask, is_in)
-
-        return np.array([None])
+        
+        # Unknown variance calculation
+        else:
+            raise NotImplementedError("Unknown variance calculation specified.")
 
     def _fixed_variance(self:Self, logits: list, mask: list, is_in: bool) -> np.ndarray:
         if is_in and not self.online:
