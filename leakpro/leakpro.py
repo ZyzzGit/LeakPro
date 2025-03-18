@@ -76,7 +76,10 @@ class LeakPro:
 
         # Load extension class and initiate it using the handler (allows for two-way communication)
         modality_extension_instance = modality_extensions[configs.audit.data_modality]
-        handler.modality_extension = modality_extension_instance(handler)
+        if modality_extension_instance is not None:
+            handler.modality_extension = modality_extension_instance(handler)
+        else:
+            handler.modality_extension = None
         return handler
 
     def run_audit(self:Self, return_results: bool = False, use_optuna: bool = False) -> None:

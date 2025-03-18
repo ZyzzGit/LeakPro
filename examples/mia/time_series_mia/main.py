@@ -41,7 +41,7 @@ if __name__ == "__main__":
     num_individuals = train_config["data"]["num_individuals"]
     train_fraction = train_config["data"]["f_train"]
     test_fraction = train_config["data"]["f_test"]
-    dataset = train_config["data"]["dataset"]
+    dataset_name = train_config["data"]["dataset"]
     data_dir = train_config["data"]["data_dir"]
     stride = train_config["data"]["stride"]
     k_lead = train_config["data"]["k_lead"] # number of leading variables to use
@@ -53,11 +53,11 @@ if __name__ == "__main__":
     target_data_file = os.path.basename(target_data_path) # Only look at file name of target data path
     target_data_file = os.path.splitext(target_data_file)[0]
 
-    if target_data_file != dataset:
-        raise Exception(f"Received unknown dataset or mismatching target file: dataset={dataset}, target={target_data_path}.")
+    if target_data_file != dataset_name:
+        raise Exception(f"Received unknown dataset or mismatching target file: dataset={dataset_name}, target={target_data_path}.")
 
     set_seed(random_seed) # Set seed before and after, to ensure same randomness if you process or dont process dataset (dataset already processed)
-    dataset = preprocess_dataset(dataset, path, lookback, horizon, num_individuals, k_lead=k_lead, stride=stride, num_time_steps=num_time_steps)
+    dataset = preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, k_lead=k_lead, stride=stride, num_time_steps=num_time_steps)
 
     set_seed(random_seed)
     train_loader, test_loader = get_dataloaders(dataset, train_fraction, test_fraction, batch_size=batch_size)
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError()
 
-    train_loss, test_loss = create_trained_model_and_metadata(model, train_loader, test_loader, epochs, optimizer)
+    train_loss, test_loss = create_trained_model_and_metadata(model, train_loader, test_loader, epochs, optimizer, dataset_name)
 
     from examples.mia.time_series_mia.utils.metrics import mse, rmse, nrmse, mae, nd
     # Print metrics on final model, unscaled vs scaled, train and test
