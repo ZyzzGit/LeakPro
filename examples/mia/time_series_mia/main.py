@@ -45,6 +45,7 @@ if __name__ == "__main__":
     data_dir = train_config["data"]["data_dir"]
     stride = train_config["data"]["stride"]
     k_lead = train_config["data"]["k_lead"] # number of leading variables to use
+    num_time_steps = train_config["data"]["num_time_steps"] # number of time steps per individual
 
     # Get data loaders
     path = os.path.join(os.getcwd(), data_dir)
@@ -56,7 +57,7 @@ if __name__ == "__main__":
         raise Exception(f"Received unknown dataset or mismatching target file: dataset={dataset}, target={target_data_path}.")
 
     set_seed(random_seed) # Set seed before and after, to ensure same randomness if you process or dont process dataset (dataset already processed)
-    dataset = preprocess_dataset(dataset, path, lookback, horizon, num_individuals, k_lead=k_lead, stride=stride)
+    dataset = preprocess_dataset(dataset, path, lookback, horizon, num_individuals, k_lead=k_lead, stride=stride, num_time_steps=num_time_steps)
 
     set_seed(random_seed)
     train_loader, test_loader = get_dataloaders(dataset, train_fraction, test_fraction, batch_size=batch_size)

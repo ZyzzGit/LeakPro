@@ -278,7 +278,8 @@ def preprocess_EEG_dataset(path, lookback, horizon, num_individuals, k_lead=3, s
         with open(os.path.join(path, "EEG.pkl"), "rb") as f:
             dataset = joblib.load(f)
 
-    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.stride != stride or dataset.num_variables != k_lead:
+    matching_num_time_steps = len(dataset) // dataset.num_individuals == num_time_steps - lookback - horizon + 1 if dataset is not None else None
+    if dataset is None or dataset.lookback != lookback or dataset.horizon != horizon or dataset.num_individuals != num_individuals or dataset.stride != stride or dataset.num_variables != k_lead or not matching_num_time_steps:
         data_path = os.path.join(path, 'EEG/000')
         subjects = os.listdir(data_path)
         random.shuffle(subjects)   # randomize order of individuals
