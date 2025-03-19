@@ -221,10 +221,11 @@ class ShadowModelHandler(ModelHandler):
                 data, target = data.to(self.device), target.to(self.device)
                 output = model(data).squeeze()
                 loss += criterion(output, target).item()
-                predictions = (output.squeeze() > 0.5).long() if output.ndim == 1 or output.shape[0] == 1 else output.argmax(1)
-                accuracy += (predictions == target).sum().item()
+                # TODO: Accuracy should probably not be mandatory here (only makes sense for classification tasks...)
+                #predictions = (output.squeeze() > 0.5).long() if output.ndim == 1 or output.shape[0] == 1 else output.argmax(1)
+                #accuracy += (predictions == target).sum().item()
         loss /= len(data_loader)
-        accuracy /= len(indices)
+        #accuracy /= len(indices)
         return accuracy, loss
 
     def _load_shadow_model(self:Self, index:int) -> Module:
