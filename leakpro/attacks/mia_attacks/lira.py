@@ -298,7 +298,8 @@ class AttackLiRA(AbstractMIA):
                 raise ValueError("Score is NaN")
 
         # Generate thresholds based on the range of computed scores for decision boundaries
-        self.thresholds = np.linspace(np.min(score), np.max(score), 1000)
+        self.thresholds = np.sort(np.unique(score))
+        #self.thresholds = np.linspace(np.min(score), np.max(score), 1000)
 
         # Split the score array into two parts based on membership: in (training) and out (non-training)
         self.in_member_signals = score[self.in_members].reshape(-1,1)  # Scores for known training data members
