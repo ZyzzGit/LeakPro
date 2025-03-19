@@ -298,7 +298,12 @@ class AttackLiRA(AbstractMIA):
                 raise ValueError("Score is NaN")
 
         # Generate thresholds based on the range of computed scores for decision boundaries
-        self.thresholds = np.sort(np.unique(score))
+        all_scores_sorted = np.sort(np.unique(score))
+        d = len(all_scores_sorted) // 1000
+        self.thresholds = all_scores_sorted[::d]
+        if len(all_scores_sorted) % 1000 != 0:
+            self.thresholds = np.concatenate((self.thresholds, [all_scores_sorted[-1]]))
+        logger.info(len(self.thresholds))
         #self.thresholds = np.linspace(np.min(score), np.max(score), 1000)
 
         # Split the score array into two parts based on membership: in (training) and out (non-training)
@@ -306,8 +311,8 @@ class AttackLiRA(AbstractMIA):
         self.out_member_signals = score[self.out_members].reshape(-1,1)  # Scores for non-training data members
 
         # Create prediction matrices by comparing each score against all thresholds
-        member_preds = np.less(self.in_member_signals, self.thresholds).T  # Predictions for training data members
-        non_member_preds = np.less(self.out_member_signals, self.thresholds).T  # Predictions for non-members
+        member_preds = np.less_equal(self.in_member_signals, self.thresholds).T  # Predictions for training data members
+        non_member_preds = np.less_equal(self.out_member_signals, self.thresholds).T  # Predictions for non-members
 
         # Concatenate the prediction results for a full dataset prediction
         predictions = np.concatenate([member_preds, non_member_preds], axis=1)
