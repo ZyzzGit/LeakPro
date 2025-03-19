@@ -100,4 +100,17 @@ if __name__ == "__main__":
     leakpro = LeakPro(IndividualizedInputHandler, audit_config_path)
 
     # Run the audit 
-    leakpro.run_audit()
+    mia_results = leakpro.run_audit(return_results=True)
+
+    # Import and initialize ReportHandler
+    from leakpro.reporting.report_handler import ReportHandler
+
+    # report_handler = ReportHandler()
+    report_handler = ReportHandler(report_dir="./leakpro_output/results")
+
+    # Save MIA resuls using report handler
+    for res in mia_results:
+        report_handler.save_results(attack_name=res.attack_name, result_data=res, config=res.configs)
+
+    # Create the report by compiling the latex text
+    report_handler.create_report()
