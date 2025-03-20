@@ -45,10 +45,10 @@ class IndividualizedInputHandler(AbstractInputHandler):
         model.to(device)
 
         # training loop
-        for epoch in range(epochs):
+        for epoch in tqdm(range(epochs), desc="Training Progress"):
             train_loss = 0
             model.train()
-            for inputs, targets in tqdm(dataloader, desc=f"Epoch {epoch+1}/{epochs}"):
+            for inputs, targets in dataloader:
                 inputs, targets = inputs.to(device, non_blocking=True), targets.to(device, non_blocking=True)
                 optimizer.zero_grad()
                 preds = model(inputs)

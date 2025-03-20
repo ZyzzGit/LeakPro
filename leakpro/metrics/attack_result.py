@@ -242,10 +242,11 @@ class MIAResult:
         self.tpr = np.divide(self.tp.astype(float), (self.tp + self.fn).astype(float),
                             out=np.full_like(self.tp, np.nan, dtype=float),
                             where=(self.tp + self.fn) != 0.0)
-        
+
         # In case denominator is zero in fpr/tpr calculations
-        self.fpr = self.fpr[~(np.isnan(self.fpr) | np.isnan(self.tpr))]
-        self.tpr = self.tpr[~(np.isnan(self.fpr) | np.isnan(self.tpr))]
+        not_nan = ~(np.isnan(self.fpr) | np.isnan(self.tpr))
+        self.fpr = self.fpr[not_nan]
+        self.tpr = self.tpr[not_nan]
 
         # In case the fpr are not sorted in ascending order.
         sorted_indices = np.argsort(self.fpr)
@@ -720,14 +721,15 @@ class TEMPLATEResult:
             """Latex method for TEMPLATEResult."""
             return results
         return _latex(results)
-    
+
 def find_tpr_at_fpr(fpr_array: np.ndarray, tpr_array:np.ndarray, threshold:float) -> float:
     """Find TPR for a given FPR."""
     # Find the last index where FPR is less than or equal to the threshold
     less_equal = np.nonzero(fpr_array <= threshold)[0]
     if len(less_equal) == 0: # If no fpr at given threshold exists return 0.0%
         return 0.0
-    return float(f"{tpr_array[less_equal[-1]] * 100:.4f}")
+    max_tpr = np.max(tpr_array[less_equal])
+    return float(f"{max_tpr * 100:.4f}")
 
 def get_result_fixed_fpr(fpr: np.ndarray, tpr: np.ndarray) -> dict:
     """Find TPR values for fixed FPRs."""
