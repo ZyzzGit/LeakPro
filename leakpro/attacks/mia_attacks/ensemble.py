@@ -1,6 +1,9 @@
-"""Implementation of the ensemble method from "Improving Membership Inference Attacks against Classification Models"."""
+"""Implementation of the Ensemble Attack from "Improving Membership Inference Attacks against Classification Models"."""
+
+from typing import Literal
 
 import numpy as np
+from pydantic import BaseModel, Field, model_validator
 from warnings import filterwarnings
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
@@ -19,7 +22,7 @@ from xgboost import XGBClassifier
 
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
-from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
+from leakpro.input_handler.mia_handler import MIAHandler
 from leakpro.metrics.attack_result import MIAResult
 from leakpro.signals.signal import get_signal_from_name
 from leakpro.utils.import_helper import Self
@@ -29,59 +32,42 @@ from leakpro.utils.logger import logger
 class AttackEnsemble(AbstractMIA):
     """Implementation of the Ensemble attack."""
 
+    class AttackConfig(BaseModel):
+        """Configuration for the Ensemble attack."""
+
+        signal_names: list[str] = Field(default=["ModelRescaledLogits"], description="What signals to use.")
+        num_instances: int = Field(default=50, ge=1, description="Number of instances to run.")
+        subset_size: int = Field(default=50, ge=1, description="Amount of datapoints within each data subset.")
+        num_pairs: int = Field(default=20, ge=1, description="Number of pairs of subsets to create membership classifiers for.")
+        num_runs: int = Field(default=5, ge=1, description="Number of runs for each subset pair.")
+        audit: bool = Field(default=False, description="Audit mode implies that membership classifiers are trained on target model membership labels, otherwise shadow model labels.")
+        training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
+        eval_batch_size: int = Field(default=32, ge=1, description="Batch size for evaluation")
+
     def __init__(self:Self,
-                 handler: AbstractInputHandler,
+                 handler: MIAHandler,
                  configs: dict
                  ) -> None:
-        """Initialize the Ensemble attack.
+        """Initialize the LiRA attack.
 
         Args:
         ----
-            handler (AbstractInputHandler): The input handler object.
+            handler (MIAHandler): The input handler object.
             configs (dict): Configuration parameters for the attack.
 
         """
+        self.configs = self.AttackConfig() if configs is None else self.AttackConfig(**configs)
+
         # Initializes the parent metric
         super().__init__(handler)
-        self.epsilon = 1e-6
-        self.shadow_models = None
-        self.shadow_model_indices = None
 
-        logger.info("Configuring Ensemble attack")
-        self._configure_attack(configs)
+        # Assign the configuration parameters to the object
+        for key, value in self.configs.model_dump().items():
+            setattr(self, key, value)
 
-
-    def _configure_attack(self:Self, configs: dict) -> None:
-        """Configure the Ensemble attack.
-
-        Args:
-        ----
-            configs (dict): Configuration parameters for the attack.
-
-        """
-        self.num_instances = configs.get("num_instances", 50) # Number of instances
-        self.subset_size = configs.get("subset_size", 50)
-        self.num_pairs = configs.get("num_pairs", 20)
-        self.num_runs = configs.get("num_runs", 5)
-        self.training_data_fraction = configs.get("training_data_fraction", 0.5)
-        self.audit = configs.get("audit", False)
-        self.signal_names = configs.get("signals", ["TrendLoss", "SeasonalityLoss"]) # [TrendLoss(), SeasonalityLoss()]
+        self.shadow_models = []
         self.signals = [get_signal_from_name(signal_name) for signal_name in self.signal_names]
         self.online = True
-
-
-        # Define the validation dictionary as: {parameter_name: (parameter, min_value, max_value)}
-        validation_dict = {
-            "num_instances": (self.num_instances, 1, None),
-            "subset_size": (self.subset_size, 1, None),
-            "num_pairs": (self.num_pairs, 1, None),
-            "num_runs": (self.num_runs, 1, None),
-            "training_data_fraction": (self.training_data_fraction, 0, 1),
-        }
-
-        # Validate parameters
-        for param_name, (param_value, min_val, max_val) in validation_dict.items():
-            self._validate_config(param_name, param_value, min_val, max_val)
 
     def description(self:Self) -> dict:
         """Return a description of the attack."""
@@ -136,8 +122,6 @@ class AttackEnsemble(AbstractMIA):
             
 
 
-
-
     def run_attack(self:Self) -> MIAResult:
         """Run the attack on the target model and dataset.
 
@@ -165,11 +149,10 @@ class AttackEnsemble(AbstractMIA):
                 current_model = self.shadow_models[instance]
 
                 # Get indices which the current shadow model is trained or not trained on
-                logger.info(f"{self.in_indices_masks=}")
                 in_indices = self.audit_data_indices[self.in_indices_masks[:, instance]]
                 out_indices = self.audit_data_indices[self.out_indices_masks[:, instance]]
 
-            # Choose a subset of these to train the membership classifiers on
+            # Choose a subset of these to train the membership classifiers on for this instance
             in_indices = np.random.choice(in_indices, self.subset_size * self.num_pairs, replace=False)
             out_indices = np.random.choice(out_indices, self.subset_size * self.num_pairs, replace=False)
 
@@ -178,11 +161,13 @@ class AttackEnsemble(AbstractMIA):
             out_features = []
             for signal in self.signals:
                 in_features.append(np.squeeze(signal([current_model],
-                                              self.handler,
-                                              in_indices)))
+                                                     self.handler,
+                                                     in_indices,
+                                                     self.eval_batch_size)))
                 out_features.append(np.squeeze(signal([current_model],
-                                               self.handler,
-                                               out_indices)))
+                                                      self.handler,
+                                                      out_indices,
+                                                      self.eval_batch_size)))
             in_features = np.swapaxes(np.array(in_features), 0, 1)
             out_features = np.swapaxes(np.array(out_features), 0, 1)
 
@@ -212,15 +197,15 @@ class AttackEnsemble(AbstractMIA):
                                   KNeighborsClassifier(),
                                   MLPClassifier(hidden_layer_sizes=(512,100,64), max_iter=100),
                                   XGBClassifier(),
-                                  SVC(kernel="poly", probability=True),
-                                  SVC(kernel="rbf", probability=True),
-                                  SVC(kernel="sigmoid", probability=True)]
+                                  SVC(kernel="poly"),
+                                  SVC(kernel="rbf"),
+                                  SVC(kernel="sigmoid")]
                         
                         for model in models:
                             pipe = make_pipeline(scaler(), model)
                             pipe = pipe.fit(features_train, label_train)
                             
-                            probs = pipe.predict_proba(features_test)[:, 1]
+                            probs = pipe.predict(features_test)
 
                             run_models.append(pipe)
                             run_auc.append(roc_auc_score(label_test, probs))
@@ -246,26 +231,25 @@ class AttackEnsemble(AbstractMIA):
                                               self.audit_data_indices)))
         features = np.swapaxes(np.array(features), 0, 1)
         
-        # Average membership probabilities over all instances and models
-        proba = np.zeros(features.shape[0])
+        # Average membership score over all instances and models
+        self.score = np.zeros(features.shape[0])
         for best_models in ensemble_models:
-            instance_proba = np.zeros(features.shape[0])
+            instance_score = np.zeros(features.shape[0])
             for model in best_models:
-                instance_proba += model.predict_proba(features)[:, 1]
-            proba += instance_proba / len(best_models)
-        self.proba = proba / self.num_instances
-
+                instance_score += model.predict(features)
+            self.score += instance_score / len(best_models)
+        self.score = self.score / self.num_instances
 
         # Generate thresholds based on the range of computed scores for decision boundaries
-        self.thresholds = np.linspace(np.min(self.proba), np.max(self.proba), 1000)
+        self.thresholds = np.linspace(np.min(self.score), np.max(self.score), 1000)
 
         # Split the score array into two parts based on membership: in (training) and out (non-training)
-        self.in_member_signals = self.proba[self.in_members].reshape(-1,1)  # Scores for known training data members
-        self.out_member_signals = self.proba[self.out_members].reshape(-1,1)  # Scores for non-training data members
+        self.in_member_signals = self.score[self.in_members].reshape(-1,1)  # Scores for known training data members
+        self.out_member_signals = self.score[self.out_members].reshape(-1,1)  # Scores for non-training data members
 
         # Create prediction matrices by comparing each score against all thresholds
-        member_preds = np.less(self.in_member_signals, self.thresholds).T  # Predictions for training data members
-        non_member_preds = np.less(self.out_member_signals, self.thresholds).T  # Predictions for non-members
+        member_preds = np.less_equal(self.in_member_signals, self.thresholds).T  # Predictions for training data members
+        non_member_preds = np.less_equal(self.out_member_signals, self.thresholds).T  # Predictions for non-members
 
         # Concatenate the prediction results for a full dataset prediction
         predictions = np.concatenate([member_preds, non_member_preds], axis=1)

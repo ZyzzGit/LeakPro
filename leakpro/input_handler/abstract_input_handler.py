@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 
+import numpy as np
 from torch.nn import Module
 from torch.nn.modules.loss import _Loss
 from torch.optim import Optimizer
@@ -35,4 +36,12 @@ class AbstractInputHandler(ABC):
         optimizer: Optimizer
     ) -> TrainingOutput:
         """Procedure to train a model on data from the population."""
+        pass
+
+    @abstractmethod
+    def sample_shadow_indices(
+        self, shadow_population:list, 
+        data_fraction:float
+    ) -> np.ndarray:
+        """Procedure to sample shadow model indices."""
         pass
