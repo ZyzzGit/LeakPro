@@ -12,6 +12,7 @@ from examples.mia.time_series_mia.utils.models.DLinear import DLinear
 from examples.mia.time_series_mia.utils.models.NBeats import NBeats
 from examples.mia.time_series_mia.utils.models.WaveNet import WaveNet
 from examples.mia.time_series_mia.utils.models.Bromick import Bromick
+from examples.mia.time_series_mia.utils.models.NHiTS import NHiTS
 
 from data_handler import IndividualizedInputHandler
 from leakpro import LeakPro
@@ -35,6 +36,7 @@ if __name__ == "__main__":
     epochs = train_config["train"]["epochs"]
     batch_size = train_config["train"]["batch_size"]
     optimizer = train_config["train"]["optimizer"]
+    loss_fn = train_config["train"]["loss"]
 
     lookback = train_config["data"]["lookback"]
     horizon = train_config["data"]["horizon"]
@@ -66,6 +68,10 @@ if __name__ == "__main__":
     input_dim = dataset.input_dim
     model_name = audit_config["target"]["model_class"]
 
+    # Train the model
+    input_dim = dataset.input_dim
+    model_name = audit_config["target"]["model_class"]
+
     if model_name == "LSTM":
         model = LSTM(input_dim, horizon)
     elif model_name == "TCN":
@@ -76,13 +82,15 @@ if __name__ == "__main__":
         model = NBeats(input_dim, lookback, horizon)
     elif model_name == "WaveNet":
         model = WaveNet(input_dim, horizon)
+    elif model_name == "NHiTS":
+        model = NHiTS(input_dim, lookback, horizon)
     elif model_name == "Bromick" or model_name == "Bhowmick":
         model = Bromick(input_dim, horizon)
     else:
         raise NotImplementedError()
 
-    train_loss, test_loss = create_trained_model_and_metadata(model, train_loader, test_loader, epochs, optimizer, dataset_name)
-
+    train_loss, test_loss = create_trained_model_and_metadata(model, train_loader, test_loader, epochs, optimizer, loss_fn, dataset_name)
+    
     from examples.mia.time_series_mia.utils.metrics import mse, rmse, nrmse, mae, nd
     # Print metrics on final model, unscaled vs scaled, train and test
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
