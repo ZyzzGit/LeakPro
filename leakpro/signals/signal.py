@@ -527,7 +527,8 @@ class TS2VecLoss(Signal):
             train_ts2vec(ts2vec_train_data, num_variables)
 
         # Load represenation model
-        device = "cuda:0" if cuda.is_available() else "cpu"
+        # TODO: check why cuda batch encoding is so freaking slow. For now, force cpu
+        device = "cpu" # "cuda:0" if cuda.is_available() else "cpu" 
         ts2vec_model = TS2Vec(
             input_dims=num_variables,
             device=device,
@@ -544,7 +545,7 @@ class TS2VecLoss(Signal):
                 # Get the TS2Vec encodings and compute L2 norm between true and pred
                 output = model.get_logits(data)
                 ts2vec_pred = ts2vec_model.encode(output, encoding_window='full_series')
-                ts2vec_true = ts2vec_model.encode(target.numpy(), encoding_window='full_series')
+                ts2vec_true = ts2vec_model.encode(target.cpu().numpy(), encoding_window='full_series')
                 ts2vec_loss = norm(ts2vec_true - ts2vec_pred, axis=1)
                 model_ts2vec_loss.extend(ts2vec_loss)
 
@@ -734,7 +735,7 @@ class RescaledSMAPELoss(Signal):
             # Initialize a matrix to store the SMAPE loss for the current model
             model_smape_loss = []
 
-            for data, target in tqdm(data_loader, desc=f"Getting SMAPE loss for model {m+1}/ {len(models)}"):
+            for data, target in tqdm(data_loader, desc=f"Getting rescaled SMAPE loss for model {m+1}/ {len(models)}"):
                 output = model.get_logits(data)
                 target = target.numpy()
                 numerator = np.abs(output - target) 
