@@ -149,8 +149,8 @@ class AttackEnsemble(AbstractMIA):
                 current_model = self.shadow_models[instance]
 
                 # Get indices which the current shadow model is trained or not trained on
-                in_indices = self.audit_data_indices[self.in_indices_masks[:, instance]]
-                out_indices = self.audit_data_indices[self.out_indices_masks[:, instance]]
+                in_indices = self.attack_data_indices[self.in_indices_masks[:, instance]]
+                out_indices = self.attack_data_indices[self.out_indices_masks[:, instance]]
 
             # Choose a subset of these to train the membership classifiers on for this instance
             in_indices = np.random.choice(in_indices, self.subset_size * self.num_pairs, replace=False)
