@@ -59,7 +59,7 @@ def create_trained_model_and_metadata(model, train_loader, test_loader, epochs, 
 
     if loss_fn.lower() == "mse":
         criterion = nn.MSELoss()
-    if loss_fn.lower() == "mae":
+    elif loss_fn.lower() == "mae":
         criterion = nn.L1Loss()
     else:
         raise NotImplementedError(f"Loss function not found: {loss_fn}")
