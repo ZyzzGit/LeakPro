@@ -1,5 +1,6 @@
 """Module containing the class to handle the user input for the Georgia 12-Lead ECG or TUH-EEG dataset."""
 
+import yaml
 import torch
 import random
 import numpy as np
@@ -10,6 +11,7 @@ from tqdm import tqdm
 from leakpro.schemas import TrainingOutput
 
 from leakpro import AbstractInputHandler
+from utils.model_preparation import evaluate
 
 class IndividualizedInputHandler(AbstractInputHandler):
     """Class to handle the user input for the Georgia 12-Lead ECG or TUH-EEG dataset."""
@@ -39,6 +41,19 @@ class IndividualizedInputHandler(AbstractInputHandler):
         # read hyperparams for training (the parameters for the dataloader are defined in get_dataloader):
         if epochs is None:
             raise ValueError("epochs not found in configs")
+        
+        # Check for early stopping configts
+        with open("train_config.yaml", 'r') as file:
+            train_config = yaml.safe_load(file)
+        early_stopping = train_config["train"].get("early_stopping", False)
+        patience = train_config["train"].get("patience", 2)
+        batch_size = train_config["train"].get("batch_size", 128)
+
+        if early_stopping:
+            val_set = dataloader.dataset.dataset.val_set
+            val_loader = DataLoader(val_set, batch_size)
+            best_val_loss = (-1, np.inf)  # (epoch, validation loss)
+            best_state_dict = model.state_dict()
 
         # prepare training
         device = torch.device("cuda" if cuda.is_available() else "cpu")
@@ -58,6 +73,23 @@ class IndividualizedInputHandler(AbstractInputHandler):
 
                 # Accumulate performance of shadow model
                 train_loss += loss.item()
+            
+            if not early_stopping:
+                continue
+
+            # Handle early stopping
+            val_loss = evaluate(model, val_loader, criterion, device)
+            if val_loss < best_val_loss[1]:
+                best_val_loss = (epoch, val_loss)
+                best_state_dict = model.state_dict()
+            elif epoch - best_val_loss[0] > patience:
+                print(f"Training stopped early at epoch {epoch+1}.")
+                break
+        
+        # Restore best weights if using early stopping
+        if early_stopping:
+            model.load_state_dict(best_state_dict)
+            print("Best weights restored.")
 
         model.to("cpu")
 

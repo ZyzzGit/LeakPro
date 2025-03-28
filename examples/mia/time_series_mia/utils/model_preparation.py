@@ -52,7 +52,7 @@ def evaluate(model, loader, criterion, device, original_scale=False):
         loss /= len(loader)
     return loss
 
-def create_trained_model_and_metadata(model, train_loader, test_loader, epochs, optimizer_name, loss_fn, dataset_name):
+def create_trained_model_and_metadata(model, train_loader, test_loader, epochs, optimizer_name, loss_fn, dataset_name, val_loader, early_stopping, patience):
     device = torch.device("cuda" if cuda.is_available() else "cpu")
     model.to(device)
     model.train()
@@ -72,9 +72,11 @@ def create_trained_model_and_metadata(model, train_loader, test_loader, epochs, 
         raise NotImplementedError(f"Optimizer not found: {optimizer_name}")
     
 
+    best_val_loss = (-1, np.inf)  # (epoch, validation loss)
+    best_state_dict = model.state_dict()
+
     train_losses, test_losses = [], []
-    
-    for _ in tqdm(range(epochs), desc="Training Progress"):
+    for i in tqdm(range(epochs), desc="Training Progress"):
         model.train()
         train_loss = 0.0
         
@@ -94,6 +96,23 @@ def create_trained_model_and_metadata(model, train_loader, test_loader, epochs, 
         
         test_loss = evaluate(model, test_loader, criterion, device)
         test_losses.append(test_loss)
+
+        if not early_stopping:
+                continue
+
+        # Handle early stopping
+        val_loss = evaluate(model, val_loader, criterion, device)
+        if val_loss < best_val_loss[1]:
+            best_val_loss = (i, val_loss)
+            best_state_dict = model.state_dict()
+        elif i - best_val_loss[0] > patience:
+            print(f"Training stopped early at epoch {i+1}.")
+            break
+    
+    # Restore best weights if using early stopping
+    if early_stopping:
+        model.load_state_dict(best_state_dict)
+        print("Best weights restored.")
 
     # Move the model back to the CPU
     model.to("cpu")

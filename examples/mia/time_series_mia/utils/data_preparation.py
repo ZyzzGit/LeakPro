@@ -3,13 +3,13 @@ import os, pickle, joblib, torch, random, numpy as np, pandas as pd
 from scipy.io import loadmat
 from sklearn.preprocessing import RobustScaler, MinMaxScaler, StandardScaler
 from torch import tensor, float32
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import DataLoader, Dataset, TensorDataset, Subset
 from sklearn.model_selection import train_test_split
 from mne.io import read_raw_edf
 from leakpro.utils.logger import logger
 
 class IndividualizedDataset(Dataset):
-    def __init__(self, x:tensor, y:tensor, individual_indices:list[tuple[int,int]], scaler, stride):
+    def __init__(self, x:tensor, y:tensor, individual_indices:list[tuple[int,int]], scaler, stride, val_set=None, num_val_individuals=0):
         self.x = x
         self.y = y
         self.scaler = scaler
@@ -21,6 +21,9 @@ class IndividualizedDataset(Dataset):
 
         self.individual_indices = individual_indices    # individual_indices[i] is a tuple [start_index, end_index) for individual i
         self.num_individuals = len(individual_indices)
+
+        self.val_set = val_set  # either None or a TensorDataset
+        self.num_val_individuals = num_val_individuals 
 
     def __len__(self):
         return len(self.x)
@@ -226,7 +229,7 @@ def dataset_matches_params(dataset_name, dataset, lookback, horizon, num_individ
     return (
         dataset.lookback == lookback and
         dataset.horizon == horizon and
-        dataset.num_individuals == num_individuals and
+        dataset.num_individuals + dataset.num_val_individuals == num_individuals and
         dataset.stride == stride and
         dataset.scaler.__class__.__name__.replace("Scaler", "").lower() == scaling.lower() and
         matching_num_variables and
@@ -244,7 +247,7 @@ def to_sequences(data, lookback, horizon, stride):
         y.append(data[t + lookback:t + lookback + horizon, :])
     return tensor(np.array(x), dtype=float32), tensor(np.array(y), dtype=float32)
 
-def preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, stride, scaling, **kwargs):
+def preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, stride, scaling, val_fraction, **kwargs):
     """Get and preprocess the dataset."""
 
     # Load dataset if already exists on path
@@ -282,21 +285,41 @@ def preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, s
     # Reshape to include individual dimension again (this is OK since all time series have equal length)
     data_scaled = data_scaled.reshape(raw_data.shape)
 
+    # Set aside the validation set and keep out of the audit set 
+    val_size = round(val_fraction * num_individuals)
+    if val_size > 0:
+        train_test_individuals, val_individuals = train_test_split(np.arange(num_individuals), test_size=val_size)
+    else:
+        train_test_individuals, val_individuals = np.arange(num_individuals), []
+
     x = []  # lists to store samples for all individuals
     y = []
-    for time_series in data_scaled:
+    x_val = []
+    y_val = []
+    for i, time_series in enumerate(data_scaled):
         # Create sequences separately for each individual
         xi, yi = to_sequences(time_series, lookback, horizon, stride)
-        x.append(xi)
-        y.append(yi)
+        if i in train_test_individuals:
+            x.append(xi)
+            y.append(yi)
+        else: # val_individuals
+            x_val.append(xi)
+            y_val.append(yi)
 
     # Keep track of sample indices for each individual time series
     num_samples_per_individual = len(x[0])
     individual_indices = [(0 + num_samples_per_individual*i, num_samples_per_individual*(i+1)) for i in range(len(x))]
 
+    # Construct validation set
+    if len(x_val) > 0:
+        x_val, y_val = torch.cat(x_val, dim=0), torch.cat(y_val, dim=0)
+        val_set = TensorDataset(x_val, y_val)
+    else:
+        val_set = None
+
     # Concatenate samples and save dataset
     x, y = torch.cat(x, dim=0), torch.cat(y, dim=0)
-    dataset = IndividualizedDataset(x, y, individual_indices, scaler, stride)
+    dataset = IndividualizedDataset(x, y, individual_indices, scaler, stride, val_set, len(val_individuals))
     with open(f"{path}/{dataset_name}.pkl", "wb") as file:
         pickle.dump(dataset, file)
         print(f"Save data to {path}/{dataset_name}.pkl") 
@@ -306,8 +329,9 @@ def preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, s
 
 def get_dataloaders(dataset: IndividualizedDataset, train_fraction=0.5, test_fraction=0.3, batch_size=128):
 
-    train_size = int(train_fraction * dataset.num_individuals)
-    test_size = int(test_fraction * dataset.num_individuals)
+    tot_num_individuals = dataset.num_individuals + dataset.num_val_individuals
+    train_size = int(train_fraction * tot_num_individuals)
+    test_size = int(test_fraction * tot_num_individuals)
     train_individuals, test_individuals = train_test_split(np.arange(dataset.num_individuals), train_size=train_size, test_size=test_size)
         
     train_ranges = [dataset.individual_indices[i] for i in train_individuals]
@@ -320,6 +344,7 @@ def get_dataloaders(dataset: IndividualizedDataset, train_fraction=0.5, test_fra
     test_subset = Subset(dataset, test_indices)
 
     train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(dataset.val_set, batch_size=batch_size, shuffle=False) if dataset.val_set else None
     test_loader = DataLoader(test_subset, batch_size=batch_size, shuffle=False)
 
-    return train_loader, test_loader
+    return train_loader, val_loader, test_loader

@@ -42,6 +42,7 @@ if __name__ == "__main__":
     horizon = train_config["data"]["horizon"]
     num_individuals = train_config["data"]["num_individuals"]
     train_fraction = train_config["data"]["f_train"]
+    val_fraction = train_config["data"].get("f_val", 0.0)
     test_fraction = train_config["data"]["f_test"]
     dataset_name = train_config["data"]["dataset"]
     data_dir = train_config["data"]["data_dir"]
@@ -49,6 +50,12 @@ if __name__ == "__main__":
     k_lead = train_config["data"]["k_lead"] # number of leading variables to use
     num_time_steps = train_config["data"]["num_time_steps"] # number of time steps per individual
     scaling = train_config["data"].get("scaling", "standard") # standard, minmax, or robust
+
+    early_stopping = train_config["train"].get("early_stopping", False)
+    patience = train_config["train"].get("patience", 2)
+
+    if early_stopping and round(val_fraction * num_individuals) < 1:
+        raise Exception("Early stopping applied but validation set is empty.")
 
     # Get data loaders
     path = os.path.join(os.getcwd(), data_dir)
@@ -60,10 +67,10 @@ if __name__ == "__main__":
         raise Exception(f"Received unknown dataset or mismatching target file: dataset={dataset_name}, target={target_data_path}.")
 
     set_seed(random_seed) # Set seed before and after, to ensure same randomness if you process or dont process dataset (dataset already processed)
-    dataset = preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, stride, scaling, k_lead=k_lead, num_time_steps=num_time_steps)
+    dataset = preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, stride, scaling, val_fraction, k_lead=k_lead, num_time_steps=num_time_steps)
 
     set_seed(random_seed)
-    train_loader, test_loader = get_dataloaders(dataset, train_fraction, test_fraction, batch_size=batch_size)
+    train_loader, val_loader, test_loader = get_dataloaders(dataset, train_fraction, test_fraction, batch_size=batch_size)
 
     # Train the model
     input_dim = dataset.input_dim
@@ -90,7 +97,7 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError()
 
-    train_loss, test_loss = create_trained_model_and_metadata(model, train_loader, test_loader, epochs, optimizer, loss_fn, dataset_name)
+    train_loss, test_loss = create_trained_model_and_metadata(model, train_loader, test_loader, epochs, optimizer, loss_fn, dataset_name, val_loader, early_stopping, patience)
     
     from examples.mia.time_series_mia.utils.metrics import mse, rmse, nrmse, mae, nd
     # Print metrics on final model, unscaled vs scaled, train and test
