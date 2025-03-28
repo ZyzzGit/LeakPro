@@ -102,15 +102,23 @@ if __name__ == "__main__":
     from examples.mia.time_series_mia.utils.metrics import mse, rmse, nrmse, mae, nd
     # Print metrics on final model, unscaled vs scaled, train and test
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    scaler = dataset.scaler
 
-    train = predict(model, train_loader, device, original_scale=False)
-    test  = predict(model, test_loader, device, original_scale=False)
-    unscaled_train = predict(model, train_loader, device, original_scale=True)
-    unscaled_test  = predict(model, test_loader, device, original_scale=True)
+    train = predict(model, train_loader, device, scaler, original_scale=False)
+    test  = predict(model, test_loader, device, scaler, original_scale=False)
+    unscaled_train = predict(model, train_loader, device, scaler, original_scale=True)
+    unscaled_test  = predict(model, test_loader, device, scaler, original_scale=True)
 
     metrics, names = [mse, mae, rmse, nrmse, nd], ["MSE", "MAE", "RMSE", "NRMSE", "ND"]
     values = [[m(*p) for m in metrics] for p in [train, test, unscaled_train, unscaled_test]]
     print(pd.DataFrame(values, columns=names, index=["Train", "Test", "Unscaled train", "Unscaled test"]))
+
+    if val_loader:
+        val  = predict(model, val_loader, device, scaler, original_scale=False)
+        unscaled_val = predict(model, val_loader, device, scaler, original_scale=True)
+        values = [[m(*p) for m in metrics] for p in [val, unscaled_val]]
+        print()
+        print(pd.DataFrame(values, columns=names, index=["Val", "Unscaled val"]))
 
     # Prepare leakpro object
     leakpro = LeakPro(IndividualizedInputHandler, audit_config_path)

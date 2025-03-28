@@ -7,7 +7,7 @@ from tqdm import tqdm
 from torch import nn, optim, cuda, no_grad, save
 from leakpro.schemas import MIAMetaDataSchema, OptimizerConfig, LossConfig
 
-def predict(model, loader, device, original_scale=False):
+def predict(model, loader, device, scaler=None, original_scale=False):
     model.eval()
     model.to(device)
     all_targets = []
@@ -21,8 +21,8 @@ def predict(model, loader, device, original_scale=False):
                 pred_2D = pred.reshape(-1, pred.shape[-1])
                 target_2D = target.reshape(-1, target.shape[-1])
 
-                pred_descaled = loader.dataset.dataset.scaler.inverse_transform(pred_2D)
-                target_descaled = loader.dataset.dataset.scaler.inverse_transform(target_2D)
+                pred_descaled = scaler.inverse_transform(pred_2D)
+                target_descaled = scaler.inverse_transform(target_2D)
 
                 pred = pred_descaled.reshape(pred.shape)
                 target = target_descaled.reshape(target.shape)
