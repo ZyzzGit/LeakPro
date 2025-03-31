@@ -204,7 +204,7 @@ def get_LCL_dataset(path, num_individuals, **kwargs):
     return load_data
 
 
-def dataset_matches_params(dataset_name, dataset, lookback, horizon, num_individuals, stride, scaling, **kwargs):
+def dataset_matches_params(dataset_name, dataset, lookback, horizon, num_individuals, stride, scaling, val_fraction, **kwargs):
     """Check if a saved dataset matches the given parameters."""
     
     if dataset is None:
@@ -236,9 +236,10 @@ def dataset_matches_params(dataset_name, dataset, lookback, horizon, num_individ
         dataset.horizon == horizon and
         dataset.num_individuals + dataset.num_val_individuals == num_individuals and
         dataset.stride == stride and
-        matching_scaler and
+        dataset.num_val_individuals == round(val_fraction * num_individuals) and
         matching_num_variables and
-        matching_num_time_steps
+        matching_num_time_steps and
+        matching_scaler
     )
 
 def to_sequences(data, lookback, horizon, stride):
@@ -262,7 +263,7 @@ def preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, s
             dataset = joblib.load(f)
 
     # If all parameters matches, we're done; return it
-    if dataset_matches_params(dataset_name, dataset, lookback, horizon, num_individuals, stride, scaling, **kwargs):
+    if dataset_matches_params(dataset_name, dataset, lookback, horizon, num_individuals, stride, scaling, val_fraction, **kwargs):
         return dataset
 
     # Else we need to construct the dataset
