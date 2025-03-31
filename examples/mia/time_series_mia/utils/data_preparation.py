@@ -1,7 +1,7 @@
 import os, pickle, joblib, torch, random, numpy as np, pandas as pd
 
 from scipy.io import loadmat
-from sklearn.preprocessing import RobustScaler, MinMaxScaler, StandardScaler
+from sklearn.preprocessing import RobustScaler, MinMaxScaler, StandardScaler, FunctionTransformer
 from torch import tensor, float32
 from torch.utils.data import DataLoader, Dataset, TensorDataset, Subset
 from sklearn.model_selection import train_test_split
@@ -225,13 +225,18 @@ def dataset_matches_params(dataset_name, dataset, lookback, horizon, num_individ
         expected_num_time_steps = num_time_steps - lookback - horizon + 1
         matching_num_time_steps = (len(dataset) // dataset.num_individuals) == expected_num_time_steps
 
+    if scaling.lower() == "none":
+        matching_scaler = dataset.scaler.__class__.__name__ == "FunctionTransformer"
+    else:
+        matching_scaler = dataset.scaler.__class__.__name__.replace("Scaler", "").lower() == scaling.lower()
+
     # Check all parameters
     return (
         dataset.lookback == lookback and
         dataset.horizon == horizon and
         dataset.num_individuals + dataset.num_val_individuals == num_individuals and
         dataset.stride == stride and
-        dataset.scaler.__class__.__name__.replace("Scaler", "").lower() == scaling.lower() and
+        matching_scaler and
         matching_num_variables and
         matching_num_time_steps
     )
@@ -275,7 +280,10 @@ def preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, s
     
     # Scaling
     scaling = scaling.lower()
-    scaler_dict = {'standard': StandardScaler(), 'minmax': MinMaxScaler(), 'robust': RobustScaler()}
+    scaler_dict = {'none': FunctionTransformer(), 
+                   'standard': StandardScaler(), 
+                   'minmax': MinMaxScaler(), 
+                   'robust': RobustScaler()}
     if scaling not in scaler_dict.keys():
         raise NotImplementedError(f"Unknown scaler: {scaling}. Supported scalings are: {scaler_dict.keys()}")
     scaler = scaler_dict[scaling]

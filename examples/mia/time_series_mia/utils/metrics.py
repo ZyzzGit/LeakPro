@@ -30,9 +30,8 @@ def mape(target, pred):
     return np.mean(np.abs((target[mask] - pred[mask]) / target[mask])) * 100 if np.any(mask) else np.nan
 
 def smape(target, pred):
-    denominator = (np.abs(target) + np.abs(pred)) / 2
-    mask = denominator != 0
-    return np.mean(2 * np.abs(target[mask] - pred[mask]) / denominator[mask]) * 100 if np.any(mask) else np.nan
+    denominator = (np.abs(target) + np.abs(pred)) + 1e-30
+    return np.mean(np.abs(target - pred) / denominator)
 
 def r2(target, pred):
     ss_res = np.sum((target - pred) ** 2)
