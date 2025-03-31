@@ -106,11 +106,10 @@ class IndividualizedInputHandler(AbstractInputHandler):
             if start in shadow_population and end-1 in shadow_population:   # assumes we either have all or no samples from ind in shadow population
                 shadow_individuals.append(ind)
 
-        num_individuals = self.population.num_individuals
-        num_shadow_individuals = int(num_individuals * data_fraction)
+        num_shadow_individuals_to_sample = int(len(shadow_individuals) * data_fraction)
 
         # Sample individuals and extract corresponding dataset indices
-        sampled_shadow_individuals = random.sample(shadow_individuals, num_shadow_individuals)
+        sampled_shadow_individuals = random.sample(shadow_individuals, num_shadow_individuals_to_sample)
         sampled_indices = np.concatenate([np.arange(start, stop) for (start, stop) in sampled_shadow_individuals], axis=0)
 
         np.random.shuffle(sampled_indices)  # shuffle again to get random index order
