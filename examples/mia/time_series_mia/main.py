@@ -4,7 +4,8 @@ project_root = os.path.abspath(os.path.join(os.getcwd(), "../../.."))
 sys.path.append(project_root)
 
 from examples.mia.time_series_mia.utils.data_preparation import preprocess_dataset, get_dataloaders
-from examples.mia.time_series_mia.utils.model_preparation import create_trained_model_and_metadata, evaluate, predict
+from examples.mia.time_series_mia.utils.metrics import mse, smape, mae, nd
+from examples.mia.time_series_mia.utils.model_preparation import create_trained_model_and_metadata, predict
 from examples.mia.time_series_mia.utils.set_seed import set_seed
 from examples.mia.time_series_mia.utils.models.LSTM import LSTM
 from examples.mia.time_series_mia.utils.models.TCN import TCN
@@ -99,7 +100,6 @@ if __name__ == "__main__":
 
     train_loss, test_loss = create_trained_model_and_metadata(model, train_loader, test_loader, epochs, optimizer, loss_fn, dataset_name, val_loader, early_stopping, patience)
     
-    from examples.mia.time_series_mia.utils.metrics import mse, rmse, nrmse, mae, nd
     # Print metrics on final model, unscaled vs scaled, train and test
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     scaler = dataset.scaler
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     unscaled_train = predict(model, train_loader, device, scaler, original_scale=True)
     unscaled_test  = predict(model, test_loader, device, scaler, original_scale=True)
 
-    metrics, names = [mse, mae, rmse, nrmse, nd], ["MSE", "MAE", "RMSE", "NRMSE", "ND"]
+    metrics, names = [mse, mae, smape, nd], ["MSE", "MAE", "SMAPE", "ND"]
     values = [[m(*p) for m in metrics] for p in [train, test, unscaled_train, unscaled_test]]
     print(pd.DataFrame(values, columns=names, index=["Train", "Test", "Unscaled train", "Unscaled test"]))
 
