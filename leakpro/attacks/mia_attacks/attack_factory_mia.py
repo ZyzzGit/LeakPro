@@ -37,12 +37,12 @@ class AttackFactoryMIA:
     distillation_model_handler = None
 
     @classmethod
-    def create_attack(cls, name: str, handler: MIAHandler) -> AbstractMIA:  # noqa: ANN102
+    def create_attack(cls, key: str, handler: MIAHandler) -> AbstractMIA:  # noqa: ANN102
         """Create the attack object.
 
         Args:
         ----
-            name (str): The name of the attack.
+            key (str): The unique key of the attack.
             handler (MIAHandler): The input handler object.
 
         Returns:
@@ -69,9 +69,14 @@ class AttackFactoryMIA:
             logger.info("Distillation model handler singleton already exists, updating state")
             AttackFactoryMIA.distillation_model_handler = DistillationModelHandler(handler)
 
-        if name in cls.attack_classes:
-            attack_config = handler.configs.audit.attack_list.get(name)
-            attack_object = cls.attack_classes[name](handler, attack_config)
+        attack_config = [ac for ac in handler.configs.audit.attack_list if ac['attack_key'] == key]
+        if len(attack_config) > 1:
+            raise Exception("Multiple attacks with identical key: {key}")
+        else:
+            attack_config = attack_config[0]
+        attack_name = attack_config['attack_name']
+        if attack_name in cls.attack_classes:
+            attack_object = cls.attack_classes[attack_name](handler, attack_config)
             attack_object.set_effective_optuna_metadata(attack_config) # remove optuna metadata if params not will be optimized
             return attack_object
-        raise ValueError(f"Unknown attack type: {name}")
+        raise ValueError(f"Unknown attack type: {attack_name} ({key})")

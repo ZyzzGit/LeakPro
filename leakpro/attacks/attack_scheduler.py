@@ -28,16 +28,17 @@ class AttackScheduler:
         self._initialize_factory(attack_type)
 
         # Create the attacks
-        self.attack_list = list(configs.audit.attack_list.keys())
+        self.attack_list = configs.audit.attack_list
         self.attacks = []
-        for attack_name in self.attack_list:
+        for attack_dict in self.attack_list:
+            attack_key = attack_dict['attack_key']
             try:
-                attack = self.attack_factory.create_attack(attack_name, handler)
+                attack = self.attack_factory.create_attack(attack_key, handler)
                 self.add_attack(attack)
-                logger.info(f"Added attack: {attack_name}")
+                logger.info(f"Added attack: {attack_key}")
             except ValueError as e:
                 logger.info(e)
-                logger.info(f"Failed to create attack: {attack_name}, supported attacks: {self.attack_factory.attack_classes.keys()}")  # noqa: E501
+                logger.info(f"Failed to create attack: {attack_dict['attack_name']} ({attack_key}), supported attacks: {self.attack_factory.attack_classes.keys()}")  # noqa: E501
 
     def _initialize_factory(self:Self, attack_type:str) -> None:
         """Conditionally import attack factories based on attack."""
@@ -79,20 +80,21 @@ class AttackScheduler:
     def run_attacks(self: Self, use_optuna:bool=False) -> Dict[str, Any]:
         """Run the attacks and return the results."""
         results = {}
-        for attack, attack_type in zip(self.attacks, self.attack_list):
+        for attack, attack_dict in zip(self.attacks, self.attack_list):
 
-            logger.info(f"Preparing attack: {attack_type}")
+            attack_key = attack_dict['attack_key']
+            logger.info(f"Preparing attack: {attack_key}")
             attack.prepare_attack()
 
-            logger.info(f"Running attack: {attack_type}")
+            logger.info(f"Running attack: {attack_key}")
             if use_optuna and attack.optuna_params > 0:
                 study = attack.run_with_optuna()
                 best_config = attack.configs.model_copy(update=study.best_params)
                 attack.reset_attack(best_config)
             result = attack.run_attack()
-            results[attack_type] = {"attack_object": attack, "result_object": result}
+            results[attack_key] = {"attack_object": attack, "result_object": result}
 
-            logger.info(f"Finished attack: {attack_type}")
+            logger.info(f"Finished attack: {attack_key}")
         return results
 
     def map_setting_to_attacks(self:Self) -> None:

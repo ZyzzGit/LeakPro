@@ -281,7 +281,8 @@ class MIAResult:
     def save(self:Self, path: str, name: str, config:dict = None, show_plot:bool = False) -> None:
         """Save the MIAResults to disk."""
 
-        result_config = config["attack_list"][name]
+        attack_list = config["attack_list"]
+        result_config = [ac for ac in attack_list if ac['attack_key'] == name][0]
         fixed_fpr_table = get_result_fixed_fpr(self.fpr, self.tpr)
 
         # Get the name for the attack configuration

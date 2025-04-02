@@ -55,7 +55,7 @@ class ReportHandler():
         return save_path
 
     def save_results(self:Self,
-                    attack_name: str = None,
+                    attack_name: str = None,    # is actually key now
                     result_data: Union[MIAResult,
                                        GIAResults,
                                        InferenceResults,
@@ -64,13 +64,9 @@ class ReportHandler():
                     config: BaseModel = None) -> None:
         """Save method for results."""
 
-        self.logger.info(f"Saving results for {attack_name}")
-        attack_config = config.attack_list.get(attack_name, None)
-
-        if attack_config is None:
-            attack_config = AttackFactoryMIA.attack_classes[attack_name].get_default_attack_config()
-            config.attack_list[attack_name] = attack_config
-        result_data.save(path=self.report_dir, name=attack_name, config=config.model_dump())
+        attack_key = attack_name
+        self.logger.info(f"Saving results for {attack_key}")
+        result_data.save(path=self.report_dir, name=attack_key, config=config.model_dump())
 
     def load_results(self:Self) -> None:
         """Load method for results."""
