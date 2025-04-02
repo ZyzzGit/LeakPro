@@ -109,6 +109,7 @@ class AbstractMIA(AbstractAttack):
     def sample_indices_from_population(
         self:Self,
         *,
+        include_aux_indices: bool = True,
         include_train_indices: bool = False,
         include_test_indices: bool = False
     ) -> np.ndarray:
@@ -127,6 +128,12 @@ class AbstractMIA(AbstractAttack):
         all_index = np.arange(AbstractMIA.population_size)
 
         not_allowed_indices = np.array([])
+        if not include_aux_indices:
+            aux_indices = np.arange(AbstractMIA.population_size)
+            aux_indices = np.setdiff1d(aux_indices, self.handler.train_indices)
+            aux_indices = np.setdiff1d(aux_indices, self.handler.test_indices)
+            not_allowed_indices = np.hstack([not_allowed_indices, aux_indices])
+
         if not include_train_indices:
             not_allowed_indices = np.hstack([not_allowed_indices, self.handler.train_indices])
 
@@ -135,6 +142,7 @@ class AbstractMIA(AbstractAttack):
 
         available_index = np.setdiff1d(all_index, not_allowed_indices)
         data_size = len(available_index)
+        assert data_size > 0, "No indices to sample from"
         return np.random.choice(available_index, data_size, replace=False)
 
 

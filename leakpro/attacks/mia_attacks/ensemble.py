@@ -102,7 +102,8 @@ class AttackEnsemble(AbstractMIA):
         logger.info("Preparing attack data for training the Ensemble attack")
 
         # Get all available indices for attack dataset including training and test data
-        self.attack_data_indices = self.sample_indices_from_population(include_train_indices = self.online,
+        self.attack_data_indices = self.sample_indices_from_population(include_aux_indices = not self.online,
+                                                                       include_train_indices = self.online,
                                                                        include_test_indices = self.online)
         logger.info(f"{self.attack_data_indices=}")
 

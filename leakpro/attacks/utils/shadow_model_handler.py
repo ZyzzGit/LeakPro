@@ -147,7 +147,7 @@ class ShadowModelHandler(ModelHandler):
             model, criterion, optimizer = self._get_model_criterion_optimizer()
 
             # Train shadow model
-            logger.info(f"Training shadow model {i} on {len(data_loader)* data_loader.batch_size} points")
+            logger.info(f"Training shadow model {i} on {len(data_indices)} points")
             training_results = self.handler.train(data_loader, model, criterion, optimizer, self.epochs)
 
             # Read out results
