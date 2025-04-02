@@ -338,11 +338,11 @@ class NHiTS(nn.Module):
         #insample_y    = Y[:, :-self.n_time_out]
         #insample_x_t  = X[:, :, :-self.n_time_out]
         #insample_mask = insample_mask[:, :-self.n_time_out]
-        x = x.swapaxes(1,2)
+        x = x.swapaxes(1,2).contiguous()
 
         insample_y    = x
         insample_x_t  = t.Tensor()
-        insample_mask = t.ones((x.size(0), x.size(1)), device=x.device)
+        insample_mask = t.ones((x.size(0), x.size(2)), device=x.device)
 
 
         # outsample
