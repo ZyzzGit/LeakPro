@@ -73,6 +73,11 @@ if __name__ == "__main__":
     set_seed(random_seed)
     train_loader, val_loader, test_loader = get_dataloaders(dataset, train_fraction, test_fraction, batch_size=batch_size)
 
+    individual_length = dataset.individual_indices[0][1] - dataset.individual_indices[0][0]
+    num_train_individuals = len(train_loader.dataset) // individual_length
+    num_test_individuals = len(test_loader.dataset) // individual_length
+    print(f"Total {num_individuals} individuals whereof {num_train_individuals} train, {dataset.num_val_individuals} val, and {num_test_individuals} test")
+
     # Train the model
     input_dim = dataset.input_dim
     model_name = audit_config["target"]["model_class"]
