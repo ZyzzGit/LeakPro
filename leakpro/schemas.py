@@ -180,9 +180,9 @@ def avg_tpr_at_low_fpr(result: MIAResult) -> float:
 class OptunaConfig(BaseModel):
     """Configuration for the Optuna hyperparameter search."""
 
-    seed: int = Field(default=1234,
+    seed: int = Field(default=42,
                       description="Random seed for reproducibility")
-    n_trials: int = Field(default=50,
+    n_trials: int = Field(default=25,
                           description="Number of trials to find the optimal hyperparameters")
     direction: Literal["maximize", "minimize"] = Field("maximize",
                                                        description="Direction of the optimization, minimize or maximize")

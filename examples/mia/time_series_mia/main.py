@@ -116,15 +116,15 @@ if __name__ == "__main__":
     unscaled_test  = predict(model, test_loader, device, scaler, original_scale=True)
 
     metrics, names = [mse, mae, smape, nd], ["MSE", "MAE", "SMAPE", "ND"]
-    values = [[m(*p) for m in metrics] for p in [train, test, unscaled_train, unscaled_test]]
-    print(pd.DataFrame(values, columns=names, index=["Train", "Test", "Unscaled train", "Unscaled test"]))
 
     if val_loader:
         val  = predict(model, val_loader, device, scaler, original_scale=False)
         unscaled_val = predict(model, val_loader, device, scaler, original_scale=True)
-        values = [[m(*p) for m in metrics] for p in [val, unscaled_val]]
-        print()
-        print(pd.DataFrame(values, columns=names, index=["Val", "Unscaled val"]))
+        values = [[m(*p) for m in metrics] for p in [train, test, val, unscaled_train, unscaled_test, unscaled_val]]
+        print(pd.DataFrame(values, columns=names, index=["Train", "Test", "Val", "Unscaled train", "Unscaled test", "Unscaled val"]))
+    else:
+        values = [[m(*p) for m in metrics] for p in [train, test, unscaled_train, unscaled_test]]
+        print(pd.DataFrame(values, columns=names, index=["Train", "Test", "Unscaled train", "Unscaled test"]))
 
     # Prepare leakpro object
     leakpro = LeakPro(IndividualizedInputHandler, audit_config_path)
