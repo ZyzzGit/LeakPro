@@ -38,10 +38,16 @@ class AbstractInputHandler(ABC):
         """Procedure to train a model on data from the population."""
         pass
 
-    @abstractmethod
     def sample_shadow_indices(
-        self, shadow_population:list, 
+        self, 
+        shadow_population:list, 
         data_fraction:float
     ) -> np.ndarray:
-        """Procedure to sample shadow model indices."""
-        pass
+        """
+        Procedure to sample shadow model indices.
+        May be overriden in Handler implementation to perform custom sampling; 
+        see for example sampling by individual in examples/mia/time_series_mia/data_handler.py
+        """
+        data_size = int(len(shadow_population)*data_fraction)
+        data_indices = np.random.choice(shadow_population, data_size, replace=False)
+        return data_indices
