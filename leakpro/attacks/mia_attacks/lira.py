@@ -24,6 +24,7 @@ class AttackLiRA(AbstractMIA):
         """Configuration for the LiRA attack."""
 
         signal_name: str = Field(default="ModelRescaledLogits", description="What signal to use.")
+        individual_mia: bool = Field(default=False, description="Run individual-level MIA.")
         num_shadow_models: int = Field(default=1, ge=1, description="Number of shadow models")
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
         online: bool = Field(default=False, description="Online vs offline attack")
@@ -284,13 +285,13 @@ class AttackLiRA(AbstractMIA):
             target_logit = self.target_logits[i]
 
             # Calculate the log probability density function value
-            pr_out = -norm.logpdf(target_logit, out_mean, out_std + 1e-30)
+            pr_out = norm.logpdf(target_logit, out_mean, out_std + 1e-30)
 
             if self.online:
                 in_mean = np.mean(shadow_models_logits[mask])
                 in_std = self.get_std(shadow_models_logits, mask, True, self.var_calculation)
 
-                pr_in = -norm.logpdf(target_logit, in_mean, in_std + 1e-30)
+                pr_in = norm.logpdf(target_logit, in_mean, in_std + 1e-30)
             else:
                 pr_in = 0
 
@@ -298,22 +299,33 @@ class AttackLiRA(AbstractMIA):
             if np.isnan(score[i]):
                 raise ValueError("Score is NaN")
 
-        # Generate thresholds based on the range of computed scores for decision boundaries
-        all_scores_sorted = np.sort(np.unique(score))
-        d = len(all_scores_sorted) // 1000
-        self.thresholds = all_scores_sorted[::d]
-        if len(all_scores_sorted) % 1000 != 0:
-            self.thresholds = np.concatenate((self.thresholds, [all_scores_sorted[-1]]))
-        logger.info(len(self.thresholds))
-        #self.thresholds = np.linspace(np.min(score), np.max(score), 1000)
-
         # Split the score array into two parts based on membership: in (training) and out (non-training)
         self.in_member_signals = score[self.in_members].reshape(-1,1)  # Scores for known training data members
         self.out_member_signals = score[self.out_members].reshape(-1,1)  # Scores for non-training data members
+        
+        if self.individual_mia:
+            samples_per_individual = self.handler.population.samples_per_individual
+            in_num_individuals = len(self.in_member_signals) // samples_per_individual 
+            out_num_individuals = len(self.out_member_signals) // samples_per_individual
+            num_individuals = in_num_individuals + out_num_individuals
+            logger.info(f"Running individual-level MI on {num_individuals} individuals with {samples_per_individual} samples per individual.")
+
+            self.in_member_signals = self.in_member_signals.reshape((in_num_individuals, samples_per_individual)).mean(axis=1, keepdims=True)
+            self.out_member_signals = self.out_member_signals.reshape((out_num_individuals, samples_per_individual)).mean(axis=1, keepdims=True)
+            self.audit_data_indices = np.arange(num_individuals)
+
+        # Generate thresholds based on the range of computed scores for decision boundaries
+        all_scores_sorted = np.sort(np.unique(np.concatenate([self.in_member_signals, self.out_member_signals])))
+        d = max(1, len(all_scores_sorted) // 1000)
+        self.thresholds = all_scores_sorted[::d]
+        if len(all_scores_sorted) % 1000 != 0:
+            self.thresholds = np.concatenate((self.thresholds, [all_scores_sorted[-1]]))
+        logger.info(self.thresholds.shape)
+        #self.thresholds = np.linspace(np.min(score), np.max(score), 1000)
 
         # Create prediction matrices by comparing each score against all thresholds
-        member_preds = np.less_equal(self.in_member_signals, self.thresholds).T  # Predictions for training data members
-        non_member_preds = np.less_equal(self.out_member_signals, self.thresholds).T  # Predictions for non-members
+        member_preds = np.greater(self.in_member_signals, self.thresholds).T  # Predictions for training data members
+        non_member_preds = np.greater(self.out_member_signals, self.thresholds).T  # Predictions for non-members
 
         # Concatenate the prediction results for a full dataset prediction
         predictions = np.concatenate([member_preds, non_member_preds], axis=1)

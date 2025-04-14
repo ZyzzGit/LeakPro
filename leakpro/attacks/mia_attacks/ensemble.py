@@ -36,6 +36,7 @@ class AttackEnsemble(AbstractMIA):
         """Configuration for the Ensemble attack."""
 
         signal_names: list[str] = Field(default=["ModelRescaledLogits"], description="What signals to use.")
+        individual_mia: bool = Field(default=False, description="Run individual-level MIA.")
         num_instances: int = Field(default=50, ge=1, description="Number of instances to run.")
         subset_size: int = Field(default=50, ge=1, description="Amount of datapoints within each data subset.")
         num_pairs: int = Field(default=20, ge=1, description="Number of pairs of subsets to create membership classifiers for.")
@@ -241,16 +242,27 @@ class AttackEnsemble(AbstractMIA):
             self.score += instance_score / len(best_models)
         self.score = self.score / self.num_instances
 
-        # Generate thresholds based on the range of computed scores for decision boundaries
-        self.thresholds = np.linspace(np.min(self.score), np.max(self.score), 1000)
-
         # Split the score array into two parts based on membership: in (training) and out (non-training)
         self.in_member_signals = self.score[self.in_members].reshape(-1,1)  # Scores for known training data members
         self.out_member_signals = self.score[self.out_members].reshape(-1,1)  # Scores for non-training data members
 
+        if self.individual_mia:
+            samples_per_individual = self.handler.population.samples_per_individual
+            in_num_individuals = len(self.in_member_signals) // samples_per_individual 
+            out_num_individuals = len(self.out_member_signals) // samples_per_individual
+            num_individuals = in_num_individuals + out_num_individuals
+            logger.info(f"Running individual-level MI on {num_individuals} individuals with {samples_per_individual} samples per individual.")
+
+            self.in_member_signals = self.in_member_signals.reshape((in_num_individuals, samples_per_individual)).mean(axis=1, keepdims=True)
+            self.out_member_signals = self.out_member_signals.reshape((out_num_individuals, samples_per_individual)).mean(axis=1, keepdims=True)
+            self.audit_data_indices = np.arange(num_individuals)
+
+        # Generate thresholds based on the range of computed scores for decision boundaries
+        self.thresholds = np.linspace(np.min(self.score), np.max(self.score), 1000)
+
         # Create prediction matrices by comparing each score against all thresholds
-        member_preds = np.less_equal(self.in_member_signals, self.thresholds).T  # Predictions for training data members
-        non_member_preds = np.less_equal(self.out_member_signals, self.thresholds).T  # Predictions for non-members
+        member_preds = np.greater_equal(self.in_member_signals, self.thresholds).T  # Predictions for training data members
+        non_member_preds = np.greater_equal(self.out_member_signals, self.thresholds).T  # Predictions for non-members
 
         # Concatenate the prediction results for a full dataset prediction
         predictions = np.concatenate([member_preds, non_member_preds], axis=1)

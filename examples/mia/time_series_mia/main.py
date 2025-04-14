@@ -74,9 +74,8 @@ if __name__ == "__main__":
     train_loader, val_loader, test_loader = get_dataloaders(dataset, train_fraction, test_fraction, batch_size=batch_size)
 
     # Print dataset split info
-    individual_length = dataset.individual_indices[0][1] - dataset.individual_indices[0][0]
-    num_train_individuals = len(train_loader.dataset) // individual_length
-    num_test_individuals = len(test_loader.dataset) // individual_length
+    num_train_individuals = len(train_loader.dataset) // dataset.samples_per_individual
+    num_test_individuals = len(test_loader.dataset) // dataset.samples_per_individual
     print(f"Total {num_individuals} individuals whereof {num_train_individuals} train, {dataset.num_val_individuals} val, and {num_test_individuals} test")
 
     # Train the model

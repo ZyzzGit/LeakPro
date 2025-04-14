@@ -23,6 +23,7 @@ class AttackRMIA(AbstractMIA):
 
         
         signal_name: str = Field(default="ModelRescaledLogits", description="What signal to use.")
+        individual_mia: bool = Field(default=False, description="Run individual-level MIA.")
         eval_batch_size: int = Field(default=32, ge=1, description="Batch size for evaluation")
         num_shadow_models: int = Field(default=1,
                                        ge=1,
@@ -437,6 +438,18 @@ class AttackRMIA(AbstractMIA):
             self._online_attack()
         else:
             self._offline_attack()
+
+        if self.individual_mia:
+            samples_per_individual = self.handler.population.samples_per_individual
+            in_num_individuals = len(self.in_member_signals) // samples_per_individual 
+            out_num_individuals = len(self.out_member_signals) // samples_per_individual
+            num_individuals = in_num_individuals + out_num_individuals
+            logger.info(f"Running individual-level MI on {num_individuals} individuals with {samples_per_individual} samples per individual.")
+
+            self.in_member_signals = self.in_member_signals.reshape((in_num_individuals, samples_per_individual)).mean(axis=1, keepdims=True)
+            self.out_member_signals = self.out_member_signals.reshape((out_num_individuals, samples_per_individual)).mean(axis=1, keepdims=True)
+            self.audit_data_indices = np.arange(num_individuals)
+
 
         # create thresholds
         min_signal_val = np.min(np.concatenate([self.in_member_signals, self.out_member_signals]))

@@ -21,6 +21,7 @@ class IndividualizedDataset(Dataset):
 
         self.individual_indices = individual_indices    # individual_indices[i] is a tuple [start_index, end_index) for individual i
         self.num_individuals = len(individual_indices)
+        self.samples_per_individual = len(x) // self.num_individuals
 
         self.val_set = val_set  # either None or a TensorDataset
         self.num_val_individuals = num_val_individuals 
