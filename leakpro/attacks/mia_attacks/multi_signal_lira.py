@@ -21,6 +21,7 @@ class AttackMSLiRA(AbstractMIA):
         """Configuration for the MSLiRA attack."""
 
         signal_names: list[str] = Field(default=["ModelRescaledLogits"], description="What signals to use.")
+        individual_mia: bool = Field(default=False, description="Run individual-level MIA.")
         num_shadow_models: int = Field(default=1, ge=1, description="Number of shadow models")
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
         online: bool = Field(default=False, description="Online vs offline attack")
@@ -203,13 +204,13 @@ class AttackMSLiRA(AbstractMIA):
             # Compute OUT statistics
             out_means = np.mean(out_signals, axis=0)
             out_covs = np.cov(out_signals, rowvar=False)
-            pr_out = -self.safe_logpdf(target_signals, out_means, out_covs)
+            pr_out = self.safe_logpdf(target_signals, out_means, out_covs)
 
             if self.online:
                 # Compute IN statistics
                 in_means = np.mean(in_signals, axis=0)
                 in_covs = np.cov(in_signals, rowvar=False)
-                pr_in = -self.safe_logpdf(target_signals, in_means, in_covs)
+                pr_in = self.safe_logpdf(target_signals, in_means, in_covs)
             else:
                 pr_in = 0
 
@@ -218,23 +219,20 @@ class AttackMSLiRA(AbstractMIA):
             if np.isnan(score[i]):
                 raise ValueError("Score is NaN")
 
-        # Generate thresholds based on the range of computed scores for decision boundaries
-        all_scores_sorted = np.sort(np.unique(score))
-        d = len(all_scores_sorted) // 1000
-        self.thresholds = all_scores_sorted[::d]
-        if len(all_scores_sorted) % 1000 != 0:
-            self.thresholds = np.concatenate((self.thresholds, [all_scores_sorted[-1]]))
-
         # Split the score array into two parts based on membership: in (training) and out (non-training)
         self.in_member_signals = score[self.in_members].reshape(-1,1)  # Scores for known training data members
         self.out_member_signals = score[self.out_members].reshape(-1,1)  # Scores for non-training data members
 
-        # Create prediction matrices by comparing each score against all thresholds
-        member_preds = np.less_equal(self.in_member_signals, self.thresholds).T  # Predictions for training data members
-        non_member_preds = np.less_equal(self.out_member_signals, self.thresholds).T  # Predictions for non-members
+        if self.individual_mia:
+            samples_per_individual = self.handler.population.samples_per_individual
+            in_num_individuals = len(self.in_member_signals) // samples_per_individual 
+            out_num_individuals = len(self.out_member_signals) // samples_per_individual
+            num_individuals = in_num_individuals + out_num_individuals
+            logger.info(f"Running individual-level MI on {num_individuals} individuals with {samples_per_individual} samples per individual.")
 
-        # Concatenate the prediction results for a full dataset prediction
-        predictions = np.concatenate([member_preds, non_member_preds], axis=1)
+            self.in_member_signals = self.in_member_signals.reshape((in_num_individuals, samples_per_individual)).mean(axis=1, keepdims=True)
+            self.out_member_signals = self.out_member_signals.reshape((out_num_individuals, samples_per_individual)).mean(axis=1, keepdims=True)
+            self.audit_data_indices = np.arange(num_individuals)
 
         # Prepare true labels array, marking 1 for training data and 0 for non-training data
         true_labels = np.concatenate(
@@ -245,10 +243,6 @@ class AttackMSLiRA(AbstractMIA):
         signal_values = np.concatenate([self.in_member_signals, self.out_member_signals])
 
         # Return a result object containing predictions, true labels, and the signal values for further evaluation
-        return MIAResult(
-            predicted_labels=predictions,
-            true_labels=true_labels,
-            predictions_proba=None,
-            signal_values=signal_values,
-            audit_indices=self.audit_data_indices,
-        )
+        return MIAResult.from_full_scores(true_membership=true_labels,
+                                    signal_values=signal_values,
+                                    result_name="LiRA")
