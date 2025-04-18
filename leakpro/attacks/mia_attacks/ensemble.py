@@ -257,16 +257,6 @@ class AttackEnsemble(AbstractMIA):
             self.out_member_signals = self.out_member_signals.reshape((out_num_individuals, samples_per_individual)).mean(axis=1, keepdims=True)
             self.audit_data_indices = np.arange(num_individuals)
 
-        # Generate thresholds based on the range of computed scores for decision boundaries
-        self.thresholds = np.linspace(np.min(self.score), np.max(self.score), 1000)
-
-        # Create prediction matrices by comparing each score against all thresholds
-        member_preds = np.greater_equal(self.in_member_signals, self.thresholds).T  # Predictions for training data members
-        non_member_preds = np.greater_equal(self.out_member_signals, self.thresholds).T  # Predictions for non-members
-
-        # Concatenate the prediction results for a full dataset prediction
-        predictions = np.concatenate([member_preds, non_member_preds], axis=1)
-
         # Prepare true labels array, marking 1 for training data and 0 for non-training data
         true_labels = np.concatenate(
             [np.ones(len(self.in_member_signals)), np.zeros(len(self.out_member_signals))]
@@ -275,12 +265,10 @@ class AttackEnsemble(AbstractMIA):
         # Combine all signal values for further analysis
         signal_values = np.concatenate([self.in_member_signals, self.out_member_signals])
 
-        # compute ROC, TP, TN etc
-        return MIAResult(
-            predicted_labels=predictions,
-            true_labels=true_labels,
-            predictions_proba=None,
-            signal_values=signal_values,
-        )
+    
+        # Return a result object containing predictions, true labels, and the signal values for further evaluation
+        return MIAResult.from_full_scores(true_membership=true_labels,
+                                    signal_values=signal_values,
+                                    result_name="Ensemble")
 
 
