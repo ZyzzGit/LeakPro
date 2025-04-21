@@ -29,6 +29,7 @@ class AttackMSLiRA(AbstractMIA):
         online: bool = Field(default=False, description="Online vs offline attack")
         eval_batch_size: int = Field(default=32, ge=1, description="Batch size for evaluation")
         var_calculation: Literal["carlini", "individual_carlini", "fixed"] = Field(default="carlini", description="Variance estimation method to use [carlini, individual_carlini, fixed]")  # noqa: E501
+        std_eps: float = Field(default=1e-30, ge=0.0, le=0.001, description="Small value to add to the standard deviations when estimating Gaussians (for numerical stability).")
 
         @model_validator(mode="after")
         def check_num_shadow_models_if_online(self) -> Self:
@@ -245,13 +246,13 @@ class AttackMSLiRA(AbstractMIA):
             # Compute OUT statistics
             out_means = np.mean(shadow_models_signals[~mask], axis=0)
             out_stds = self.get_std(shadow_models_signals, ~mask, False, self.var_calculation)
-            out_prs = -norm.logpdf(target_signals, out_means, out_stds + 1e-30)
+            out_prs = -norm.logpdf(target_signals, out_means, out_stds + self.std_eps)
         
             if self.online:
                 # Compute IN statistics
                 in_means = np.mean(shadow_models_signals[mask], axis=0)
                 in_stds = self.get_std(shadow_models_signals, mask, True, self.var_calculation)
-                in_prs = -norm.logpdf(target_signals, in_means, in_stds + 1e-30)
+                in_prs = -norm.logpdf(target_signals, in_means, in_stds + self.std_eps)
             else:
                 in_prs = np.zeros(len(out_prs))
 
