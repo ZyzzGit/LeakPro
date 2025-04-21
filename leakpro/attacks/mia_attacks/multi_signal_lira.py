@@ -1,9 +1,11 @@
 """Implementation of a multi-signal version of the LiRA attack."""
 
 import numpy as np
+
 from pydantic import BaseModel, Field, model_validator
-from scipy.stats import multivariate_normal
+from scipy.stats import norm
 from tqdm import tqdm
+from typing import Literal
 
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
@@ -26,6 +28,7 @@ class AttackMSLiRA(AbstractMIA):
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
         online: bool = Field(default=False, description="Online vs offline attack")
         eval_batch_size: int = Field(default=32, ge=1, description="Batch size for evaluation")
+        var_calculation: Literal["carlini", "individual_carlini", "fixed"] = Field(default="carlini", description="Variance estimation method to use [carlini, individual_carlini, fixed]")  # noqa: E501
 
         @model_validator(mode="after")
         def check_num_shadow_models_if_online(self) -> Self:
@@ -84,9 +87,10 @@ class AttackMSLiRA(AbstractMIA):
         detailed_str = "The attack is executed according to: \
             1. A fraction of the target model dataset is sampled to be included (in-) or excluded (out-) \
             from the shadow model training dataset. \
-            2. The attack signals are used to estimate multi-variate Gaussian distributions for in and out members. \
-            3. The thresholds are used to classify in-members and out-members. \
-            4. The attack is evaluated on an audit dataset to determine the attack performance."
+            2. The attack signals are used to estimate Gaussian distributions for in and out members, independently for each signal. \
+            3. Probabilities are multiplied across the different signal distributions to obtain a joint membership probability. \
+            4. The thresholds are used to classify in-members and out-members. \
+            5. The attack is evaluated on an audit dataset to determine the attack performance."
 
         return {
             "title_str": title_str,
@@ -102,6 +106,10 @@ class AttackMSLiRA(AbstractMIA):
         of the audit dataset, prepares the data for evaluation, and computes the signals
         for both shadow models and the target model.
         """
+
+        # Fixed variance is used when the number of shadow models is below 32 (64, IN and OUT models)
+        #       from (Membership Inference Attacks From First Principles)
+        self.fix_var_threshold = 32
 
         self.attack_data_indices = self.sample_indices_from_population(include_aux_indices = not self.online,
                                                                        include_train_indices = self.online,
@@ -168,12 +176,44 @@ class AttackMSLiRA(AbstractMIA):
         self.shadow_models_signals = np.stack(shadow_models_signals, axis=-1)
         self.target_model_signals = np.stack(target_model_signals, axis=-1)
     
-    def safe_logpdf(x, mean, cov, eps=1e-30):
-        try:
-            return multivariate_normal.logpdf(x, mean, cov + eps * np.eye(len(mean)))
-        except np.linalg.LinAlgError:
-            logger.warning("Covariance matrix is not positive definite. Using allow_singular=True to compute logpdf.")
-            return multivariate_normal.logpdf(x, mean, cov + eps * np.eye(len(mean)), allow_singular=True)
+    def get_std(self:Self, signals: list, mask: list, is_in: bool, var_calculation: str) -> np.ndarray:
+        """A function to define what method to use for calculating variance for LiRA."""
+
+        # Fixed/Global variance calculation.
+        if var_calculation == "fixed":
+            return self._fixed_variance(signals, mask, is_in)
+
+        # Variance calculation as in the paper ( Membership Inference Attacks From First Principles )
+        elif var_calculation == "carlini":
+            return self._carlini_variance(signals, mask, is_in)
+
+        # Variance calculation as in the paper ( Membership Inference Attacks From First Principles )
+        #   but check IN and OUT samples individualy
+        elif var_calculation == "individual_carlini":
+            return self._individual_carlini(signals, mask, is_in)
+        
+        # Unknown variance calculation
+        else:
+            raise NotImplementedError("Unknown variance calculation specified.")
+
+    def _fixed_variance(self:Self, signals: list, mask: list, is_in: bool) -> np.ndarray:
+        if is_in and not self.online:
+            return np.array([None])
+        return np.std(signals[mask], axis=0)
+
+    def _carlini_variance(self:Self, signals: list, mask: list, is_in: bool) -> np.ndarray:
+        if self.num_shadow_models >= self.fix_var_threshold*2:
+                return np.std(signals[mask], axis=0)
+        if is_in:
+            return self.fixed_in_stds
+        return self.fixed_out_stds
+
+    def _individual_carlini(self:Self, signals: list, mask: list, is_in: bool) -> np.ndarray:
+        if np.count_nonzero(mask) >= self.fix_var_threshold:
+            return np.std(signals[mask], axis=0)
+        if is_in:
+            return self.fixed_in_stds
+        return self.fixed_out_stds
 
     def run_attack(self:Self) -> MIAResult:
         """Runs the attack on the target model and dataset and assess privacy risks or data leakage.
@@ -191,30 +231,33 @@ class AttackMSLiRA(AbstractMIA):
         n_audit_samples = self.shadow_models_signals.shape[0]
         score = np.zeros(n_audit_samples)  # List to hold the computed probability scores for each sample
 
+        shadow_models_signals_flattened = self.shadow_models_signals.reshape(-1, self.shadow_models_signals.shape[-1])  # flatten only first two dimensions (samples, shadow models)
+        self.fixed_in_stds = self.get_std(shadow_models_signals_flattened, self.in_indices_masks.flatten(), True, "fixed")
+        self.fixed_out_stds = self.get_std(shadow_models_signals_flattened, (~self.in_indices_masks).flatten(), False, "fixed")
+
         # Iterate over and extract signals for IN and OUT shadow models for each audit sample
-        for i, mask in tqdm(enumerate(self.in_indices_masks),
+        for i, (shadow_models_signals, mask) in tqdm(enumerate(zip(self.shadow_models_signals, self.in_indices_masks)),
                             total=n_audit_samples,
                             desc="Processing audit samples"):
 
-            # Get the signals from the target and shadow models for the current sample
             target_signals = self.target_model_signals[i]
-            out_signals = self.shadow_models_signals[i][~mask]
-            in_signals = self.shadow_models_signals[i][mask]
 
             # Compute OUT statistics
-            out_means = np.mean(out_signals, axis=0)
-            out_covs = np.cov(out_signals, rowvar=False)
-            pr_out = self.safe_logpdf(target_signals, out_means, out_covs)
-
+            out_means = np.mean(shadow_models_signals[~mask], axis=0)
+            out_stds = self.get_std(shadow_models_signals, ~mask, False, self.var_calculation)
+            out_prs = -norm.logpdf(target_signals, out_means, out_stds + 1e-30)
+        
             if self.online:
                 # Compute IN statistics
-                in_means = np.mean(in_signals, axis=0)
-                in_covs = np.cov(in_signals, rowvar=False)
-                pr_in = self.safe_logpdf(target_signals, in_means, in_covs)
+                in_means = np.mean(shadow_models_signals[mask], axis=0)
+                in_stds = self.get_std(shadow_models_signals, mask, True, self.var_calculation)
+                in_prs = -norm.logpdf(target_signals, in_means, in_stds + 1e-30)
             else:
-                pr_in = 0
+                in_prs = np.zeros(len(out_prs))
 
-            score[i] = pr_in - pr_out   # Append the calculated probability density value to the score list
+            # Estimate probabilities independently for each signal
+            probabilities = in_prs - out_prs
+            score[i] = probabilities.sum() # Compute (assuming independence) and append the joint probability to the score list
 
             if np.isnan(score[i]):
                 raise ValueError("Score is NaN")
