@@ -136,7 +136,7 @@ class ShadowModelHandler(ModelHandler):
 
         for i in indices_to_use:
             # Get dataloader
-            data_indices = np.random.choice(shadow_population, data_size, replace=False)
+            data_indices = self.handler.sample_shadow_indices(shadow_population, training_fraction)
             data_loader = self.handler.get_dataloader(data_indices, params=None)
 
             # Get shadow model blueprint
