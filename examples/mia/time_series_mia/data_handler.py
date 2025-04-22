@@ -12,6 +12,7 @@ from leakpro.schemas import TrainingOutput
 
 from leakpro import AbstractInputHandler
 from utils.model_preparation import evaluate
+from utils.data_preparation import IndividualizedDataset
 
 class IndividualizedInputHandler(AbstractInputHandler):
     """Class to handle the user input for the Georgia 12-Lead ECG or TUH-EEG dataset."""
@@ -27,6 +28,11 @@ class IndividualizedInputHandler(AbstractInputHandler):
     def get_optimizer(self, model:torch.nn.Module) -> None:
         """Set the optimizer for the model."""
         return optim.Adam(model.parameters())
+
+    class UserDataset(IndividualizedDataset):
+        """Conforms to AbstractInputHandler.UserDataset using IndividualizedDataset."""
+        def __init__(self, data, targets, *args, **kwargs):
+            super().__init__(data, targets, *args, **kwargs)
 
     def train(
         self,

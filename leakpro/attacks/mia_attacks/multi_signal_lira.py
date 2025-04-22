@@ -27,7 +27,6 @@ class AttackMSLiRA(AbstractMIA):
         num_shadow_models: int = Field(default=1, ge=1, description="Number of shadow models")
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
         online: bool = Field(default=False, description="Online vs offline attack")
-        eval_batch_size: int = Field(default=32, ge=1, description="Batch size for evaluation")
         var_calculation: Literal["carlini", "individual_carlini", "fixed"] = Field(default="carlini", description="Variance estimation method to use [carlini, individual_carlini, fixed]")  # noqa: E501
         std_eps: float = Field(default=1e-30, ge=0.0, le=0.001, description="Small value to add to the standard deviations when estimating Gaussians (for numerical stability).")
 
@@ -164,14 +163,12 @@ class AttackMSLiRA(AbstractMIA):
             logger.info(f"Calculating {signal_name} for all {self.num_shadow_models} shadow models")
             shadow_models_signals.append(np.swapaxes(signal(self.shadow_models,
                                                                 self.handler,
-                                                                self.audit_data_indices,
-                                                                self.eval_batch_size), 0, 1))
+                                                                self.audit_data_indices), 0, 1))
 
             logger.info(f"Calculating {signal_name} for the target model")
             target_model_signals.append(np.swapaxes(signal([self.target_model],
                                                             self.handler,
-                                                            self.audit_data_indices,
-                                                            self.eval_batch_size), 0, 1).squeeze())
+                                                            self.audit_data_indices), 0, 1).squeeze())
             
         # Stack signals to get shape (n_audit_points, n_shadow_models, n_signals)
         self.shadow_models_signals = np.stack(shadow_models_signals, axis=-1)
@@ -246,13 +243,13 @@ class AttackMSLiRA(AbstractMIA):
             # Compute OUT statistics
             out_means = np.mean(shadow_models_signals[~mask], axis=0)
             out_stds = self.get_std(shadow_models_signals, ~mask, False, self.var_calculation)
-            out_prs = -norm.logpdf(target_signals, out_means, out_stds + self.std_eps)
+            out_prs = norm.logpdf(target_signals, out_means, out_stds + self.std_eps)
         
             if self.online:
                 # Compute IN statistics
                 in_means = np.mean(shadow_models_signals[mask], axis=0)
                 in_stds = self.get_std(shadow_models_signals, mask, True, self.var_calculation)
-                in_prs = -norm.logpdf(target_signals, in_means, in_stds + self.std_eps)
+                in_prs = norm.logpdf(target_signals, in_means, in_stds + self.std_eps)
             else:
                 in_prs = np.zeros(len(out_prs))
 

@@ -28,7 +28,6 @@ class AttackLiRA(AbstractMIA):
         num_shadow_models: int = Field(default=1, ge=1, description="Number of shadow models")
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
         online: bool = Field(default=False, description="Online vs offline attack")
-        eval_batch_size: int = Field(default=32, ge=1, description="Batch size for evaluation")
         var_calculation: Literal["carlini", "individual_carlini", "fixed"] = Field(default="carlini", description="Variance estimation method to use [carlini, individual_carlini, fixed]")  # noqa: E501
         # memorization boosting
         memorization: bool = Field(default=False, description="Activate memorization boosting")

@@ -43,7 +43,6 @@ class AttackEnsemble(AbstractMIA):
         num_runs: int = Field(default=5, ge=1, description="Number of runs for each subset pair.")
         audit: bool = Field(default=False, description="Audit mode implies that membership classifiers are trained on target model membership labels, otherwise shadow model labels.")
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
-        eval_batch_size: int = Field(default=32, ge=1, description="Batch size for evaluation")
 
     def __init__(self:Self,
                  handler: MIAHandler,
@@ -164,12 +163,10 @@ class AttackEnsemble(AbstractMIA):
             for signal in self.signals:
                 in_features.append(np.squeeze(signal([current_model],
                                                      self.handler,
-                                                     in_indices,
-                                                     self.eval_batch_size)))
+                                                     in_indices)))
                 out_features.append(np.squeeze(signal([current_model],
                                                       self.handler,
-                                                      out_indices,
-                                                      self.eval_batch_size)))
+                                                      out_indices)))
             in_features = np.swapaxes(np.array(in_features), 0, 1)
             out_features = np.swapaxes(np.array(out_features), 0, 1)
 

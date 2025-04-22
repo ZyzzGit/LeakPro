@@ -9,39 +9,36 @@ from mne.io import read_raw_edf
 from leakpro.utils.logger import logger
 
 class IndividualizedDataset(Dataset):
-    def __init__(self, x:tensor, y:tensor, individual_indices:list[tuple[int,int]], scaler, stride, val_set=None, num_val_individuals=0):
-        self.x = x
-        self.y = y
+    def __init__(self, data:tensor, targets:tensor, individual_indices:list[tuple[int,int]], scaler, stride, val_set=None, num_val_individuals=0):
+        self.data = data
+        self.targets = targets
         self.scaler = scaler
         self.stride = stride
         
-        self.lookback = x.size(1)
-        self.horizon = y.size(1)
-        self.num_variables = y.size(2)
+        self.lookback = data.size(1)
+        self.horizon = targets.size(1)
+        self.num_variables = targets.size(2)
 
         self.individual_indices = individual_indices    # individual_indices[i] is a tuple [start_index, end_index) for individual i
         self.num_individuals = len(individual_indices)
-        self.samples_per_individual = len(x) // self.num_individuals
+        self.samples_per_individual = data.size(0) // self.num_individuals
 
         self.val_set = val_set  # either None or a TensorDataset
         self.num_val_individuals = num_val_individuals 
 
     def __len__(self):
-        return len(self.x)
+        return len(self.data)
 
     def __getitem__(self, idx):
-        return self.x[idx, ...], self.y[idx, ...]
-    
-    def subset(self, indices):
-        return Subset(self, indices)
+        return self.data[idx, ...], self.targets[idx, ...]
     
     @property
     def input_dim(self):
-        return self.x.shape[-1]
+        return self.data.shape[-1]
     
-    @property 
+    @property
     def output_dim(self):
-        return self.y.shape[-1]
+        return self.targets.shape[-1]
 
 
 def read_mat_data(path, file):

@@ -24,7 +24,6 @@ class AttackRMIA(AbstractMIA):
         
         signal_name: str = Field(default="ModelRescaledLogits", description="What signal to use.")
         individual_mia: bool = Field(default=False, description="Run individual-level MIA.")
-        eval_batch_size: int = Field(default=32, ge=1, description="Batch size for evaluation")
         num_shadow_models: int = Field(default=1,
                                        ge=1,
                                        description="Number of shadow models")
@@ -163,14 +162,14 @@ class AttackRMIA(AbstractMIA):
         np.save(f_z_true_labels, z_true_labels)
 
         # run points through real model to collect the logits
-        logits_theta = np.array(self.signal([self.target_model], self.handler, chosen_attack_data_indices, self.eval_batch_size))
+        logits_theta = np.array(self.signal([self.target_model], self.handler, chosen_attack_data_indices))
 
         # Store the ratio of p(z|theta) to p(z) for the audit dataset to be used in other optuna
         f_logits_theta = f"{self.attack_folder_path}/logits_theta.npy"
         np.save(f_logits_theta, logits_theta)
 
         # run points through shadow models and collect the logits
-        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, chosen_attack_data_indices, self.eval_batch_size))
+        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, chosen_attack_data_indices))
         f_logits_sm = f"{self.attack_folder_path}/logits_shadow_models.npy"
         np.save(f_logits_sm, logits_shadow_models)
 
@@ -245,9 +244,9 @@ class AttackRMIA(AbstractMIA):
         logger.info(f"Number of points in the audit dataset that are used for online attack: {len(audit_data_indices)}")
 
         # run points through target model to get logits
-        logits_theta = np.array(self.signal([self.target_model], self.handler, audit_data_indices, self.eval_batch_size))
+        logits_theta = np.array(self.signal([self.target_model], self.handler, audit_data_indices))
         # run points through shadow models to get logits
-        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, audit_data_indices, self.eval_batch_size))
+        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, audit_data_indices))
 
         f_logits_theta = f"{self.attack_folder_path}/logits_audit_theta.npy"
         np.save(f_logits_theta, logits_theta)
@@ -286,9 +285,9 @@ class AttackRMIA(AbstractMIA):
             z_true_labels = z_true_labels.astype(int)
 
         # run points through real model to collect the logits
-        logits_target_model = np.array(self.signal([self.target_model], self.handler, self.attack_data_index, self.eval_batch_size))
+        logits_target_model = np.array(self.signal([self.target_model], self.handler, self.attack_data_index))
         # run points through shadow models and collect the logits
-        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, self.attack_data_index, self.eval_batch_size))
+        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, self.attack_data_index))
 
         f_logits_target_model = f"{self.attack_folder_path}/logits_aux_target_model.npy"
         np.save(f_logits_target_model, logits_target_model)
@@ -303,12 +302,12 @@ class AttackRMIA(AbstractMIA):
         """Prepare the logits for the offline attack on the audit dataset."""
 
         # run target points through real model to get logits
-        logits_theta = np.array(self.signal([self.target_model], self.handler, self.audit_dataset["data"], self.eval_batch_size))
+        logits_theta = np.array(self.signal([self.target_model], self.handler, self.audit_dataset["data"]))
         f_logits_theta = f"{self.attack_folder_path}/logits_audit_theta.npy"
         np.save(f_logits_theta, logits_theta)
 
         # run points through shadow models and collect the logits
-        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, self.audit_dataset["data"], self.eval_batch_size))
+        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, self.audit_dataset["data"]))
         f_logits_sm = f"{self.attack_folder_path}/logits_audit_shadow_models.npy"
         np.save(f_logits_sm, logits_shadow_models)
 

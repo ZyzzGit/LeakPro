@@ -5,7 +5,7 @@ import numpy as np
 
 from tqdm import tqdm
 from torch import nn, optim, cuda, no_grad, save
-from leakpro.schemas import MIAMetaDataSchema, OptimizerConfig, LossConfig
+from leakpro.schemas import MIAMetaDataSchema, OptimizerConfig, LossConfig, DataLoaderConfig, EvalOutput
 
 def predict(model, loader, device, scaler=None, original_scale=False):
     model.eval()
@@ -126,32 +126,37 @@ def create_trained_model_and_metadata(model, train_loader, test_loader, epochs, 
     for key, value in model.init_params.items():
         init_params[key] = value
 
-    optimizer_data = {
-        "name": optimizer.__class__.__name__.lower(),
-        "lr": optimizer.param_groups[0].get("lr", 0),
-        "weight_decay": optimizer.param_groups[0].get("weight_decay", 0),
-        "momentum": optimizer.param_groups[0].get("momentum", 0),
-        "dampening": optimizer.param_groups[0].get("dampening", 0),
-        "nesterov": optimizer.param_groups[0].get("nesterov", False)
-    }
+    optimizer_config = OptimizerConfig(
+        name=optimizer.__class__.__name__.lower(),
+        params={
+            "lr": optimizer.param_groups[0].get("lr", 0),
+            "weight_decay": optimizer.param_groups[0].get("weight_decay", 0),
+            "momentum": optimizer.param_groups[0].get("momentum", 0),
+            "dampening": optimizer.param_groups[0].get("dampening", 0),
+            "nesterov": optimizer.param_groups[0].get("nesterov", False)
+        }
+    )
 
-    loss_data = {"name": criterion.__class__.__name__.lower()}
+    loss_config = LossConfig(name=criterion.__class__.__name__.lower())
+
+    data_loader_config = DataLoaderConfig(params={"batch_size":train_loader.batch_size, "shuffle": True})
+
+    train_result = EvalOutput(loss=train_loss, accuracy=0.0)
+    test_result = EvalOutput(loss=val_loss, accuracy=0.0)
     
     meta_data = MIAMetaDataSchema(
-            train_indices=train_loader.dataset.indices,
-            test_indices=test_loader.dataset.indices,
-            num_train=len(train_loader.dataset.indices),
-            init_params=init_params,
-            optimizer=OptimizerConfig(**optimizer_data),
-            loss=LossConfig(**loss_data),
-            batch_size=train_loader.batch_size,
-            epochs=epochs,
-            train_acc=0.0,  # TODO: make acc optional in schema or use something like sMAPE
-            test_acc=0.0,
-            train_loss=train_loss,
-            test_loss=test_loss,
-            dataset=dataset_name
-        )
+        train_indices=train_loader.dataset.indices,
+        test_indices=test_loader.dataset.indices,
+        num_train=len(train_loader.dataset.indices),
+        init_params=init_params,
+        optimizer=optimizer_config,
+        criterion=loss_config,
+        data_loader=data_loader_config,
+        epochs=epochs,
+        train_result=train_result,
+        test_result=test_result,
+        dataset=dataset_name,
+    )
     
     with open("target/model_metadata.pkl", "wb") as f:
         pickle.dump(meta_data, f)

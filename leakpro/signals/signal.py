@@ -286,7 +286,6 @@ class SeasonalityLoss(Signal):
         models: List[Model],
         handler: AbstractInputHandler,
         indices: np.ndarray,
-        batch_size: int = 32,
     ) -> List[np.ndarray]:
         """Built-in call method.
 
@@ -303,7 +302,7 @@ class SeasonalityLoss(Signal):
 
         """
         # Compute the signal for each model
-        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        data_loader = handler.get_dataloader(indices, shuffle=False)
         assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
 
         results = []
@@ -343,7 +342,6 @@ class TrendLoss(Signal):
         models: List[Model],
         handler: AbstractInputHandler,
         indices: np.ndarray,
-        batch_size: int = 32,
     ) -> List[np.ndarray]:
         """Built-in call method.
 
@@ -360,7 +358,7 @@ class TrendLoss(Signal):
 
         """
         # Compute the signal for each model
-        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        data_loader = handler.get_dataloader(indices, shuffle=False)
         assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
 
         results = []
@@ -393,7 +391,6 @@ class MSELoss(Signal):
         models: List[Model],
         handler: AbstractInputHandler,
         indices: np.ndarray,
-        batch_size: int = 32,
     ) -> List[np.ndarray]:
         """Built-in call method.
 
@@ -410,7 +407,7 @@ class MSELoss(Signal):
 
         """
         # Compute the signal for each model
-        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        data_loader = handler.get_dataloader(indices, shuffle=False)
         assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
 
         results = []
@@ -440,7 +437,6 @@ class MASELoss(Signal):
         models: List[Model],
         handler: AbstractInputHandler,
         indices: np.ndarray,
-        batch_size: int = 32,
     ) -> List[np.ndarray]:
         """Built-in call method.
 
@@ -457,7 +453,7 @@ class MASELoss(Signal):
 
         """
         # Compute the signal for each model
-        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        data_loader = handler.get_dataloader(indices, shuffle=False)
         assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
 
         results = []
@@ -491,7 +487,6 @@ class TS2VecLoss(Signal):
         models: List[Model],
         handler: AbstractInputHandler,
         indices: np.ndarray,
-        batch_size: int = 32,
     ) -> List[np.ndarray]:
         """Built-in call method.
 
@@ -510,7 +505,7 @@ class TS2VecLoss(Signal):
         _, _, num_variables = handler.population.y.shape
 
         # Compute the signal for each model
-        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        data_loader = handler.get_dataloader(indices, shuffle=False)
         assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
 
         # Check if representation model is available
@@ -558,7 +553,6 @@ class DTWDistance(Signal):
         models: List[Model],
         handler: AbstractInputHandler,
         indices: np.ndarray,
-        batch_size: int = 32,
     ) -> List[np.ndarray]:
         """Built-in call method.
 
@@ -575,7 +569,7 @@ class DTWDistance(Signal):
 
         """
         # Compute the signal for each model
-        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        data_loader = handler.get_dataloader(indices, shuffle=False)
         assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
 
         results = []
@@ -605,7 +599,6 @@ class MSMDistance(Signal):
         models: List[Model],
         handler: AbstractInputHandler,
         indices: np.ndarray,
-        batch_size: int = 32,
     ) -> List[np.ndarray]:
         """Built-in call method.
 
@@ -622,7 +615,7 @@ class MSMDistance(Signal):
 
         """
         # Compute the signal for each model
-        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        data_loader = handler.get_dataloader(indices, shuffle=False)
         assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
 
         results = []
@@ -652,7 +645,6 @@ class SMAPELoss(Signal):
         models: List[Model],
         handler: AbstractInputHandler,
         indices: np.ndarray,
-        batch_size: int = 32,
     ) -> List[np.ndarray]:
         """Built-in call method.
 
@@ -669,7 +661,7 @@ class SMAPELoss(Signal):
 
         """
         # Compute the signal for each model
-        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        data_loader = handler.get_dataloader(indices, shuffle=False)
         assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
 
         results = []
@@ -703,7 +695,6 @@ class RescaledSMAPELoss(Signal):
         models: List[Model],
         handler: AbstractInputHandler,
         indices: np.ndarray,
-        batch_size: int = 32,
     ) -> List[np.ndarray]:
         """Built-in call method.
 
@@ -720,7 +711,7 @@ class RescaledSMAPELoss(Signal):
 
         """
         # Compute the signal for each model
-        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        data_loader = handler.get_dataloader(indices, shuffle=False)
         assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
 
         results = []
@@ -755,7 +746,6 @@ class MAELoss(Signal):
         models: List[Model],
         handler: AbstractInputHandler,
         indices: np.ndarray,
-        batch_size: int = 32,
     ) -> List[np.ndarray]:
         """Built-in call method.
 
@@ -772,7 +762,7 @@ class MAELoss(Signal):
 
         """
         # Compute the signal for each model
-        data_loader = handler.get_dataloader(indices, batch_size=batch_size)
+        data_loader = handler.get_dataloader(indices, shuffle=False)
         assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
 
         results = []
