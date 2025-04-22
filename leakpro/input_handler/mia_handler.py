@@ -188,7 +188,7 @@ class MIAHandler:
         targets = self.population.targets[dataset_indices]
 
         params = {} if params is None else params
-        return self.UserDataset(data, targets, **params)
+        return self.UserDataset(data, targets, self.population.individual_indices, self.population.scaler, self.population.stride, **params)
 
     def get_dataloader(self: Self,
                        dataset_indices: np.ndarray,

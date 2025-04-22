@@ -1,40 +1,34 @@
-"""Implementation of the LiRA attack."""
-
-from typing import Literal
+"""Implementation of a multi-signal version of the LiRA attack."""
 
 import numpy as np
+
 from pydantic import BaseModel, Field, model_validator
 from scipy.stats import norm
 from tqdm import tqdm
+from typing import Literal
 
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
-from leakpro.attacks.utils.boosting import Memorization
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.mia_handler import MIAHandler
-from leakpro.reporting.mia_result import MIAResult
+from leakpro.metrics.attack_result import MIAResult
 from leakpro.signals.signal import get_signal_from_name
 from leakpro.utils.import_helper import Self
 from leakpro.utils.logger import logger
 
 
-class AttackLiRA(AbstractMIA):
-    """Implementation of the LiRA attack."""
+class AttackMSLiRA(AbstractMIA):
+    """Implementation of a multi-signal version of the LiRA attack."""
 
     class AttackConfig(BaseModel):
-        """Configuration for the LiRA attack."""
+        """Configuration for the MSLiRA attack."""
 
-        signal_name: str = Field(default="ModelRescaledLogits", description="What signal to use.")
+        signal_names: list[str] = Field(default=["ModelRescaledLogits"], description="What signals to use.")
         individual_mia: bool = Field(default=False, description="Run individual-level MIA.")
         num_shadow_models: int = Field(default=1, ge=1, description="Number of shadow models")
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
         online: bool = Field(default=False, description="Online vs offline attack")
         var_calculation: Literal["carlini", "individual_carlini", "fixed"] = Field(default="carlini", description="Variance estimation method to use [carlini, individual_carlini, fixed]")  # noqa: E501
-        # memorization boosting
-        memorization: bool = Field(default=False, description="Activate memorization boosting")
-        use_privacy_score: bool = Field(default=False, description="Filter based on privacy score aswell as memorization score")
-        memorization_threshold: float = Field(default=0.8, ge=0.0, le=1.0, description="Set percentile for most vulnerable data points, use 0.0 for paper thresholds")  # noqa: E501
-        min_num_memorization_audit_points: int = Field(default=10, ge=1, description="Set minimum allowed audit points after memorization")  # noqa: E501
-        num_memorization_audit_points: int = Field(default=0, ge=0, description="Directly set number of most vulnerable audit data points (Overrides 'memorization_threshold')")  # noqa: E501
+        std_eps: float = Field(default=1e-30, ge=0.0, le=0.001, description="Small value to add to the standard deviations when estimating Gaussians (for numerical stability).")
 
         @model_validator(mode="after")
         def check_num_shadow_models_if_online(self) -> Self:
@@ -57,7 +51,7 @@ class AttackLiRA(AbstractMIA):
                  handler: MIAHandler,
                  configs: dict
                  ) -> None:
-        """Initialize the LiRA attack.
+        """Initialize the MSLiRA attack.
 
         Args:
         ----
@@ -79,22 +73,24 @@ class AttackLiRA(AbstractMIA):
                     There is no data left for the shadow models.")
 
         self.shadow_models = []
-        self.signal = get_signal_from_name(self.signal_name)
+        self.signals = [get_signal_from_name(signal_name) for signal_name in self.signal_names]
 
     def description(self:Self) -> dict:
         """Return a description of the attack."""
-        title_str = "Likelihood Ratio Attack"
+        title_str = "Multi-Signal Likelihood Ratio Attack"
 
-        reference_str = "Carlini N, et al. Membership Inference Attacks From First Principles"
+        reference_str = "Original LiRA: Carlini N, et al. Membership Inference Attacks From First Principles"
 
-        summary_str = "LiRA is a membership inference attack based on rescaled logits of a black-box model"
+        summary_str = "LiRA is a membership inference attack based on rescaled logits of a black-box model. \
+        The multi-signal version extends LiRA to attack a model based on multiple signals extracted from the outputs."
 
         detailed_str = "The attack is executed according to: \
             1. A fraction of the target model dataset is sampled to be included (in-) or excluded (out-) \
             from the shadow model training dataset. \
-            2. The rescaled logits are used to estimate Gaussian distributions for in and out members \
-            3. The thresholds are used to classify in-members and out-members. \
-            4. The attack is evaluated on an audit dataset to determine the attack performance."
+            2. The attack signals are used to estimate Gaussian distributions for in and out members, independently for each signal. \
+            3. Probabilities are multiplied across the different signal distributions to obtain a joint membership probability. \
+            4. The thresholds are used to classify in-members and out-members. \
+            5. The attack is evaluated on an audit dataset to determine the attack performance."
 
         return {
             "title_str": title_str,
@@ -107,7 +103,7 @@ class AttackLiRA(AbstractMIA):
         """Prepares data to obtain metric on the target model and dataset, using signals computed on the auxiliary model/dataset.
 
         It selects a balanced subset of data samples from in-group and out-group members
-        of the audit dataset, prepares the data for evaluation, and computes the logits
+        of the audit dataset, prepares the data for evaluation, and computes the signals
         for both shadow models and the target model.
         """
 
@@ -160,145 +156,114 @@ class AttackLiRA(AbstractMIA):
                 logger.info(f"Some shadow model(s) contains {count_in_samples} IN samples in total for the model(s)")
                 logger.info("This is not an offline attack!")
 
-        logger.info(f"Calculating the logits for all {self.num_shadow_models} shadow models")
-        self.shadow_models_logits = np.swapaxes(self.signal(self.shadow_models,
+        # Calculate all signals for the target and shadow models
+        shadow_models_signals = []
+        target_model_signals = []
+        for signal, signal_name in zip(self.signals, self.signal_names):
+            logger.info(f"Calculating {signal_name} for all {self.num_shadow_models} shadow models")
+            shadow_models_signals.append(np.swapaxes(signal(self.shadow_models,
+                                                                self.handler,
+                                                                self.audit_data_indices), 0, 1))
+
+            logger.info(f"Calculating {signal_name} for the target model")
+            target_model_signals.append(np.swapaxes(signal([self.target_model],
                                                             self.handler,
-                                                            self.audit_data_indices), 0, 1)
-
-        # Calculate logits for the target model
-        logger.info("Calculating the logits for the target model")
-        self.target_logits = np.swapaxes(self.signal([self.target_model],
-                                                     self.handler,
-                                                     self.audit_data_indices), 0, 1).squeeze()
-
-        # Using Memorizationg boosting
-        if self.memorization:
-
-            # Prepare for memorization
-            org_audit_data_length = self.audit_data_indices.size
-            audit_data_labels = self.handler.get_labels(self.audit_data_indices)
-
-            logger.info("Running memorization")
-            memorization = Memorization(
-                self.use_privacy_score,
-                self.memorization_threshold,
-                self.min_num_memorization_audit_points,
-                self.num_memorization_audit_points,
-                self.in_indices_masks,
-                self.shadow_models,
-                self.target_model,
-                self.audit_data_indices,
-                audit_data_labels,
-                org_audit_data_length,
-                self.handler,
-                self.online,
-            )
-            memorization_mask, _, _ = memorization.run()
-
-            # Filter masks
-            self.in_indices_masks = self.in_indices_masks[memorization_mask, :]
-
-            # Filter IN and OUT members
-            self.in_members = np.arange(np.sum(memorization_mask[self.in_members]))
-            num_out_members = np.sum(memorization_mask[self.out_members])
-            self.out_members = np.arange(len(self.in_members), len(self.in_members) + num_out_members)
-
-            assert len(self.out_members) > 0
-            assert len(self.in_members) > 0
-
-            # Filter logits
-            self.shadow_models_logits = self.shadow_models_logits[memorization_mask, :]
-            self.target_logits = self.target_logits[memorization_mask]
-
-    def get_std(self:Self, logits: list, mask: list, is_in: bool, var_calculation: str) -> np.ndarray:
+                                                            self.audit_data_indices), 0, 1).squeeze())
+            
+        # Stack signals to get shape (n_audit_points, n_shadow_models, n_signals)
+        self.shadow_models_signals = np.stack(shadow_models_signals, axis=-1)
+        self.target_model_signals = np.stack(target_model_signals, axis=-1)
+    
+    def get_std(self:Self, signals: list, mask: list, is_in: bool, var_calculation: str) -> np.ndarray:
         """A function to define what method to use for calculating variance for LiRA."""
 
         # Fixed/Global variance calculation.
         if var_calculation == "fixed":
-            return self._fixed_variance(logits, mask, is_in)
+            return self._fixed_variance(signals, mask, is_in)
 
         # Variance calculation as in the paper ( Membership Inference Attacks From First Principles )
         elif var_calculation == "carlini":
-            return self._carlini_variance(logits, mask, is_in)
+            return self._carlini_variance(signals, mask, is_in)
 
         # Variance calculation as in the paper ( Membership Inference Attacks From First Principles )
         #   but check IN and OUT samples individualy
         elif var_calculation == "individual_carlini":
-            return self._individual_carlini(logits, mask, is_in)
+            return self._individual_carlini(signals, mask, is_in)
         
         # Unknown variance calculation
         else:
             raise NotImplementedError("Unknown variance calculation specified.")
 
-    def _fixed_variance(self:Self, logits: list, mask: list, is_in: bool) -> np.ndarray:
+    def _fixed_variance(self:Self, signals: list, mask: list, is_in: bool) -> np.ndarray:
         if is_in and not self.online:
             return np.array([None])
-        return np.std(logits[mask])
+        return np.std(signals[mask], axis=0)
 
-    def _carlini_variance(self:Self, logits: list, mask: list, is_in: bool) -> np.ndarray:
+    def _carlini_variance(self:Self, signals: list, mask: list, is_in: bool) -> np.ndarray:
         if self.num_shadow_models >= self.fix_var_threshold*2:
-                return np.std(logits[mask])
+                return np.std(signals[mask], axis=0)
         if is_in:
-            return self.fixed_in_std
-        return self.fixed_out_std
+            return self.fixed_in_stds
+        return self.fixed_out_stds
 
-    def _individual_carlini(self:Self, logits: list, mask: list, is_in: bool) -> np.ndarray:
+    def _individual_carlini(self:Self, signals: list, mask: list, is_in: bool) -> np.ndarray:
         if np.count_nonzero(mask) >= self.fix_var_threshold:
-            return np.std(logits[mask])
+            return np.std(signals[mask], axis=0)
         if is_in:
-            return self.fixed_in_std
-        return self.fixed_out_std
+            return self.fixed_in_stds
+        return self.fixed_out_stds
 
     def run_attack(self:Self) -> MIAResult:
         """Runs the attack on the target model and dataset and assess privacy risks or data leakage.
 
-        This method evaluates how the target model's output (logits) for a specific dataset
-        compares to the output of shadow models to determine if the dataset was part of the
+        This method evaluates how the signals extracted from the target model's output for a specific dataset
+        compares to the signals of output of shadow models to determine if the dataset was part of the
         model's training data or not.
 
         Returns
         -------
         Result(s) of the metric. An object containing the metric results, including predictions,
-        true labels, and signal values.
+        true labels, and membership scores.
 
         """
-        n_audit_samples = self.shadow_models_logits.shape[0]
+        n_audit_samples = self.shadow_models_signals.shape[0]
         score = np.zeros(n_audit_samples)  # List to hold the computed probability scores for each sample
 
-        self.fixed_in_std = self.get_std(self.shadow_models_logits.flatten(), self.in_indices_masks.flatten(), True, "fixed")
-        self.fixed_out_std = self.get_std(self.shadow_models_logits.flatten(), (~self.in_indices_masks).flatten(), False, "fixed")
+        shadow_models_signals_flattened = self.shadow_models_signals.reshape(-1, self.shadow_models_signals.shape[-1])  # flatten only first two dimensions (samples, shadow models)
+        self.fixed_in_stds = self.get_std(shadow_models_signals_flattened, self.in_indices_masks.flatten(), True, "fixed")
+        self.fixed_out_stds = self.get_std(shadow_models_signals_flattened, (~self.in_indices_masks).flatten(), False, "fixed")
 
-        # Iterate over and extract logits for IN and OUT shadow models for each audit sample
-        for i, (shadow_models_logits, mask) in tqdm(enumerate(zip(self.shadow_models_logits, self.in_indices_masks)),
-                                                    total=len(self.shadow_models_logits),
-                                                    desc="Processing audit samples"):
+        # Iterate over and extract signals for IN and OUT shadow models for each audit sample
+        for i, (shadow_models_signals, mask) in tqdm(enumerate(zip(self.shadow_models_signals, self.in_indices_masks)),
+                            total=n_audit_samples,
+                            desc="Processing audit samples"):
 
-            # Calculate the mean for OUT shadow model logits
-            out_mean = np.mean(shadow_models_logits[~mask])
-            out_std = self.get_std(shadow_models_logits, ~mask, False, self.var_calculation)
+            target_signals = self.target_model_signals[i]
 
-            # Get the logit from the target model for the current sample
-            target_logit = self.target_logits[i]
-
-            # Calculate the log probability density function value
-            pr_out = norm.logpdf(target_logit, out_mean, out_std + 1e-30)
-
+            # Compute OUT statistics
+            out_means = np.mean(shadow_models_signals[~mask], axis=0)
+            out_stds = self.get_std(shadow_models_signals, ~mask, False, self.var_calculation)
+            out_prs = norm.logpdf(target_signals, out_means, out_stds + self.std_eps)
+        
             if self.online:
-                in_mean = np.mean(shadow_models_logits[mask])
-                in_std = self.get_std(shadow_models_logits, mask, True, self.var_calculation)
-
-                pr_in = norm.logpdf(target_logit, in_mean, in_std + 1e-30)
+                # Compute IN statistics
+                in_means = np.mean(shadow_models_signals[mask], axis=0)
+                in_stds = self.get_std(shadow_models_signals, mask, True, self.var_calculation)
+                in_prs = norm.logpdf(target_signals, in_means, in_stds + self.std_eps)
             else:
-                pr_in = 0
+                in_prs = np.zeros(len(out_prs))
 
-            score[i] = (pr_in - pr_out)  # Append the calculated probability density value to the score list
+            # Estimate probabilities independently for each signal
+            probabilities = in_prs - out_prs
+            score[i] = probabilities.sum() # Compute (assuming independence) and append the joint probability to the score list
+
             if np.isnan(score[i]):
                 raise ValueError("Score is NaN")
 
         # Split the score array into two parts based on membership: in (training) and out (non-training)
         self.in_member_signals = score[self.in_members].reshape(-1,1)  # Scores for known training data members
         self.out_member_signals = score[self.out_members].reshape(-1,1)  # Scores for non-training data members
-        
+
         if self.individual_mia:
             samples_per_individual = self.handler.population.samples_per_individual
             in_num_individuals = len(self.in_member_signals) // samples_per_individual 
@@ -321,5 +286,4 @@ class AttackLiRA(AbstractMIA):
         # Return a result object containing predictions, true labels, and the signal values for further evaluation
         return MIAResult.from_full_scores(true_membership=true_labels,
                                     signal_values=signal_values,
-                                    result_name="LiRA",
-                                    metadata=self.configs.model_dump())
+                                    result_name="MS-LiRA")
