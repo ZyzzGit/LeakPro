@@ -502,7 +502,7 @@ class TS2VecLoss(Signal):
             The signal value.
 
         """
-        _, _, num_variables = handler.population.y.shape
+        _, _, num_variables = handler.population.targets.shape
 
         # Compute the signal for each model
         data_loader = handler.get_dataloader(indices, shuffle=False)
@@ -512,7 +512,7 @@ class TS2VecLoss(Signal):
         ts2vec_model_path = 'data/ts2vec_model.pkl'
         if not os.path.exists(ts2vec_model_path):
             logger.info("Training TS2Vec representation model")
-            train_ts2vec(handler.population.y, num_variables)
+            train_ts2vec(handler.population.targets, num_variables)
 
         # Load represenation model
         # TODO: check why cuda batch encoding is so freaking slow. For now, force cpu
@@ -520,7 +520,7 @@ class TS2VecLoss(Signal):
         ts2vec_model = TS2Vec(
             input_dims=num_variables,
             device=device,
-            batch_size=batch_size
+            batch_size=data_loader.batch_size
         )
         ts2vec_model.load(ts2vec_model_path)
 
