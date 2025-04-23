@@ -6,7 +6,7 @@ import random
 import numpy as np
 from torch import cuda, optim
 from torch.nn import MSELoss
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 from leakpro.schemas import TrainingOutput
 
@@ -28,11 +28,6 @@ class IndividualizedInputHandler(AbstractInputHandler):
     def get_optimizer(self, model:torch.nn.Module) -> None:
         """Set the optimizer for the model."""
         return optim.Adam(model.parameters())
-
-    class UserDataset(IndividualizedDataset):
-        """Conforms to AbstractInputHandler.UserDataset using IndividualizedDataset."""
-        def __init__(self, data, targets, *args, **kwargs):
-            super().__init__(data, targets, *args, **kwargs)
 
     def train(
         self,
@@ -56,7 +51,8 @@ class IndividualizedInputHandler(AbstractInputHandler):
         batch_size = train_config["train"].get("batch_size", 128)
 
         if early_stopping:
-            val_set = dataloader.dataset.dataset.val_set
+            base_dataset = dataloader.dataset.dataset if isinstance(dataloader.dataset, Subset) else dataloader.dataset
+            val_set = base_dataset.val_set
             val_loader = DataLoader(val_set, batch_size)
             best_val_loss = (-1, np.inf)  # (epoch, validation loss)
             best_state_dict = model.state_dict()
@@ -99,7 +95,7 @@ class IndividualizedInputHandler(AbstractInputHandler):
 
         model.to("cpu")
 
-        output_dict = {"model": model, "metrics": {"loss": train_loss}}
+        output_dict = {"model": model, "metrics": {"accuracy": 0.42, "loss": train_loss}}   # TODO: accuracy should be an optional metric!
         output = TrainingOutput(**output_dict)
         return output
     
@@ -120,3 +116,18 @@ class IndividualizedInputHandler(AbstractInputHandler):
 
         np.random.shuffle(sampled_indices)  # shuffle again to get random index order
         return sampled_indices
+    
+    class UserDataset(AbstractInputHandler.UserDataset):
+        
+        def __init__(self, data, targets, **kwargs):
+            self.data = data
+            self.targets = targets
+
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+        def __len__(self):
+            return len(self.targets)
+
+        def __getitem__(self, idx):
+            return self.data[idx], self.targets[idx]
