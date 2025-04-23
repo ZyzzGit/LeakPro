@@ -41,7 +41,6 @@ class AbstractInputHandler(ABC):
         dataloader: DataLoader,
         model: Module,
         criterion: _Loss,
-        device: str
     ) -> EvalOutput:
         """Procedure to train a model on data from the population."""
         pass
