@@ -302,5 +302,15 @@ class MIAHandler:
 
         if optimizer_cls is None:
             raise ValueError(f"Optimizer {self.name} not found in torch.optim")
+        
+        # Get valid constructor argument names for given optimizer class
+        valid_args = {
+            k for k in inspect.signature(optimizer_cls.__init__).parameters.keys()
+        }
+        
+        # Filter params to only include valid ones
+        filtered_params = {
+            k: v for k, v in optimizer_config.params.items() if k in valid_args
+        }
 
-        return optimizer_cls(model.parameters(), **optimizer_config.params)
+        return optimizer_cls(model.parameters(), **filtered_params)
