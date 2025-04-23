@@ -8,7 +8,7 @@ from torch import cuda, optim
 from torch.nn import MSELoss
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
-from leakpro.schemas import TrainingOutput
+from leakpro.schemas import TrainingOutput, EvalOutput
 
 from leakpro import AbstractInputHandler
 from utils.model_preparation import evaluate
@@ -95,9 +95,22 @@ class IndividualizedInputHandler(AbstractInputHandler):
 
         model.to("cpu")
 
-        output_dict = {"model": model, "metrics": {"accuracy": 0.42, "loss": train_loss}}   # TODO: accuracy should be an optional metric!
+        output_dict = {"model": model, "metrics": {"accuracy": 1.0, "loss": train_loss}}    # TODO: accuracy should be an optional metric!
         output = TrainingOutput(**output_dict)
         return output
+    
+    def eval(
+        self,
+        dataloader: DataLoader,
+        model: torch.nn.Module = None,
+        criterion: torch.nn.Module = None,
+    ) -> EvalOutput:
+        """Model evaluation procedure."""
+        device = torch.device("cuda" if cuda.is_available() else "cpu")
+        eval_loss = evaluate(model, dataloader, criterion, device)
+        output_dict = {"accuracy": 1.0, "loss": eval_loss}     # TODO: accuracy should be an optional metric!
+        eval_output = EvalOutput(**output_dict)
+        return eval_output
     
     def sample_shadow_indices(self, shadow_population:list, data_fraction:float) -> np.ndarray:
         """Samples data indices from shadow population by individuals"""
@@ -118,7 +131,7 @@ class IndividualizedInputHandler(AbstractInputHandler):
         return sampled_indices
     
     class UserDataset(AbstractInputHandler.UserDataset):
-        
+
         def __init__(self, data, targets, **kwargs):
             self.data = data
             self.targets = targets
