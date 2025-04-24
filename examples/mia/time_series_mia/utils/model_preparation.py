@@ -130,10 +130,6 @@ def create_trained_model_and_metadata(model, train_loader, test_loader, epochs, 
         name=optimizer.__class__.__name__.lower(),
         params={
             "lr": optimizer.param_groups[0].get("lr", 0),
-            "weight_decay": optimizer.param_groups[0].get("weight_decay", 0),
-            "momentum": optimizer.param_groups[0].get("momentum", 0),
-            "dampening": optimizer.param_groups[0].get("dampening", 0),
-            "nesterov": optimizer.param_groups[0].get("nesterov", False)
         }
     )
 

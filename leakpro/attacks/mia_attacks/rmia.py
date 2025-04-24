@@ -1,5 +1,6 @@
 """Implementation of the RMIA attack."""
 import os
+from typing import Literal
 
 import numpy as np
 from pydantic import BaseModel, Field, model_validator
@@ -23,6 +24,7 @@ class AttackRMIA(AbstractMIA):
 
         
         signal_name: str = Field(default="ModelRescaledLogits", description="What signal to use.")
+        transformation_name: Literal["recip", "reciplog", "arctan"] = Field(default="recip", description='Transformation to use ["recip", "reciplog", "arctan"]')  # noqa: E501
         individual_mia: bool = Field(default=False, description="Run individual-level MIA.")
         num_shadow_models: int = Field(default=1,
                                        ge=1,
@@ -98,6 +100,11 @@ class AttackRMIA(AbstractMIA):
 
         self.shadow_models = []
         self.signal = get_signal_from_name(self.signal_name)
+        self.transformation = {
+            "recip": lambda x: 1 / (x + 1), 
+            "reciplog": lambda x: 1 / np.log(x + np.e), 
+            "arctan": lambda x: 1 / (np.arctan(x) + 1),
+        }[self.transformation_name]
         self.epsilon = 1e-6
         self.shadow_models = None
         self.shadow_model_indices = None
@@ -201,12 +208,12 @@ class AttackRMIA(AbstractMIA):
             # collect the softmax output of the correct class
             n_attack_points = len(z_true_labels)
             #p_z_given_theta = softmax_logits(logits_theta, self.temperature)[:,np.arange(n_attack_points),z_true_labels]
-            p_z_given_theta = 1 / (1 + logits_theta[:, np.arange(n_attack_points)])
+            p_z_given_theta = self.transformation(logits_theta[:, np.arange(n_attack_points)])
 
             # collect the softmax output of the correct class for each shadow model
             #sm_logits_shadow_models = [softmax_logits(x, self.temperature) for x in logits_shadow_models]
             #p_z_given_shadow_models = np.array([x[np.arange(n_attack_points),z_true_labels] for x in sm_logits_shadow_models])
-            p_z_given_shadow_models = 1 / (1 + logits_shadow_models[:, np.arange(n_attack_points)])
+            p_z_given_shadow_models = self.transformation(logits_shadow_models[:, np.arange(n_attack_points)])
 
             # evaluate the marginal p(z)
             p_z = np.mean(p_z_given_shadow_models, axis=0) if len(self.shadow_models) > 1 else p_z_given_shadow_models.squeeze()
@@ -329,12 +336,12 @@ class AttackRMIA(AbstractMIA):
         # collect the softmax output of the correct class
         n_audit_points = len(ground_truth_indices)
         #p_x_given_target_model = softmax_logits(logits_theta, self.temperature)[:,np.arange(n_audit_points),ground_truth_indices]
-        p_x_given_target_model = 1 / (1 + logits_theta[:, np.arange(n_audit_points)])
+        p_x_given_target_model = self.transformation(logits_theta[:, np.arange(n_audit_points)])
 
         # run points through shadow models, collect logits and compute p(x)
         #sm_shadow_models = [softmax_logits(x, self.temperature) for x in logits_shadow_models]
         #p_x_given_shadow_models = np.array([x[np.arange(n_audit_points),ground_truth_indices] for x in sm_shadow_models])
-        p_x_given_shadow_models = 1 / (1 + logits_shadow_models[:, np.arange(n_audit_points)])
+        p_x_given_shadow_models = self.transformation(logits_shadow_models[:, np.arange(n_audit_points)])
 
         p_x = np.mean(p_x_given_shadow_models, axis=0) if len(self.shadow_models) > 1 else p_x_given_shadow_models.squeeze()
         # compute the ratio of p(x|theta) to p(x)
@@ -350,12 +357,12 @@ class AttackRMIA(AbstractMIA):
         # collect the softmax output of the correct class
         n_attack_points = len(self.attack_data_index)
         #p_z_given_target_model = softmax_logits(logits_target_model, self.temperature)[:,np.arange(n_attack_points),z_true_labels]
-        p_z_given_target_model = 1 / (1 + logits_target_model[:, np.arange(n_attack_points)])
+        p_z_given_target_model = self.transformation(logits_target_model[:, np.arange(n_attack_points)])
 
         # collect the softmax output of the correct class for each shadow model
         #sm_shadow_models = [softmax_logits(x, self.temperature) for x in logits_shadow_models]
         #p_z_given_shadow_models = np.array([x[np.arange(n_attack_points),z_true_labels] for x in sm_shadow_models])
-        p_z_given_shadow_models = 1 / (1 + logits_shadow_models[:, np.arange(n_attack_points)])
+        p_z_given_shadow_models = self.transformation(logits_shadow_models[:, np.arange(n_attack_points)])
 
         score = np.zeros(n_audit_points)
         for i in tqdm(range(n_audit_points),
@@ -390,13 +397,13 @@ class AttackRMIA(AbstractMIA):
 
         n_audit_points = len(self.audit_dataset["data"])
         #p_x_given_target_model = softmax_logits(logits_theta, self.temperature)[:,np.arange(n_audit_points),ground_truth_indices]
-        p_x_given_target_model = 1 / (1 + logits_theta[:, np.arange(n_audit_points)])
+        p_x_given_target_model = self.transformation(logits_theta[:, np.arange(n_audit_points)])
 
         # collect the softmax output of the correct class for each shadow model
         # Stack to dimension # models x # data points
         #sm_shadow_models = [softmax_logits(x, self.temperature) for x in logits_shadow_models]
         #p_x_given_shadow_models = np.array([x[np.arange(n_audit_points),ground_truth_indices] for x in sm_shadow_models])
-        p_x_given_shadow_models = 1 / (1 + logits_shadow_models[:, np.arange(n_audit_points)])
+        p_x_given_shadow_models = self.transformation(logits_shadow_models[:, np.arange(n_audit_points)])
 
         # evaluate the marginal p_out(x) by averaging the output of the shadow models
         p_x_out = np.mean(p_x_given_shadow_models, axis=0) if len(self.shadow_models) > 1 else p_x_given_shadow_models.squeeze()

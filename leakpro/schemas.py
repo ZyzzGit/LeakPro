@@ -205,7 +205,7 @@ class OptunaConfig(BaseModel):
 
     seed: int = Field(default=42,
                       description="Random seed for reproducibility")
-    n_trials: int = Field(default=25,
+    n_trials: int = Field(default=15,
                           description="Number of trials to find the optimal hyperparameters")
     direction: Literal["maximize", "minimize"] = Field("maximize",
                                                        description="Direction of the optimization, minimize or maximize")
