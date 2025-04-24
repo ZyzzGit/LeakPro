@@ -300,8 +300,8 @@ class MIAResult:
             json.dump(self.result.model_dump(), f, default=json_fallback)
 
         # Store results for user output
-        with open(f"{save_path}/result.txt", "w") as f:
-            f.write(str(self.result.model_dump()))
+        with open(f"{save_path}/result.json", "w") as f:
+            json.dump(self.result.model_dump(), f, default=json_fallback)
 
         # Create ROC plot
         if self._has_roc():
@@ -374,6 +374,10 @@ class MIAResult:
         obj.fp = mia_data.fp
         obj.tn = mia_data.tn
         obj.fn = mia_data.fn
+        obj.roc_mode = "full"
+        if len(obj.tp) == 1:
+            obj.roc_mode = "none"
+        obj.result = obj._make_result_object()
 
         return obj
 
