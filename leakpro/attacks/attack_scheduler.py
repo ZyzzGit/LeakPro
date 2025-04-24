@@ -118,6 +118,8 @@ class AttackScheduler:
                 data_path = f"{self.data_object_dir}/{attack_obj.attack_id}.json"
                 result = MIAResult.load(data_path)
                 logger.info(f"Loaded previous results for attack: {attack_type}")
+                logger.info(f"Saving results for attack: {attack_type} to {self.report_dir}")
+                #result.save(attack_obj = attack_obj, output_dir = self.output_dir)
             else:
                 if not run_with_optuna:
                     logger.info(f"Preparing attack: {attack_type}")

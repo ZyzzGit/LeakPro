@@ -23,7 +23,7 @@ from xgboost import XGBClassifier
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.mia_handler import MIAHandler
-from leakpro.metrics.attack_result import MIAResult
+from leakpro.reporting.mia_result import MIAResult
 from leakpro.signals.signal import get_signal_from_name
 from leakpro.utils.import_helper import Self
 from leakpro.utils.logger import logger

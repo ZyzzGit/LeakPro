@@ -20,7 +20,7 @@ def get_config_name(config: BaseModel) -> str:
 
     config = dict(sorted(config.items()))
 
-    exclude = ["attack_data_dir", "min_num_memorization_audit_points", "num_memorization_audit_points"]
+    exclude = ["attack_data_dir", "min_num_memorization_audit_points", "num_memorization_audit_points", ]
 
     config_name = ""
     for key, value in zip(list(config.keys()), list(config.values())):

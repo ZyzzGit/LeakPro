@@ -7,7 +7,7 @@ from tqdm import tqdm
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
-from leakpro.metrics.attack_result import MIAResult
+from leakpro.reporting.mia_result import MIAResult
 from leakpro.signals.signal import get_signal_from_name
 from leakpro.utils.import_helper import Self
 from leakpro.utils.logger import logger
@@ -256,17 +256,7 @@ class AttackRMIADirect(AbstractMIA):
         # pick out the in-members and out-members signals
         self.in_member_signals = score[in_members].reshape(-1,1)
         self.out_member_signals = score[out_members].reshape(-1,1)
-
-        # create thresholds
-        min_signal_val = np.min(np.concatenate([self.in_member_signals, self.out_member_signals]))
-        max_signal_val = np.max(np.concatenate([self.in_member_signals, self.out_member_signals]))
-        thresholds = np.linspace(min_signal_val, max_signal_val, 1000)
-
-        member_preds = np.greater(self.in_member_signals, thresholds).T
-        non_member_preds = np.greater(self.out_member_signals, thresholds).T
-
-        # what does the attack predict on test and train dataset
-        predictions = np.concatenate([member_preds, non_member_preds], axis=1)
+        
         # set true labels for being in the training dataset
         true_labels = np.concatenate(
             [
@@ -278,12 +268,8 @@ class AttackRMIADirect(AbstractMIA):
             [self.in_member_signals, self.out_member_signals]
         )
 
-        # compute ROC, TP, TN etc
-        return MIAResult(
-            predicted_labels=predictions,
-            true_labels=true_labels,
-            predictions_proba=None,
-            signal_values=signal_values,
-        )
+        return MIAResult.from_full_scores(true_membership=true_labels,
+                                    signal_values=signal_values,
+                                    result_name="MS-LiRA")
 
 
