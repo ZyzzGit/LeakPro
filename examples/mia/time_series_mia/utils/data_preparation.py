@@ -103,7 +103,7 @@ def get_EEG_dataset(path, num_individuals, k_lead=3, num_time_steps=75000, **kwa
     return trimmed_selected_time_series
 
 
-def get_ELD_dataset(path, num_individuals, **kwargs):
+def get_ELD_dataset(path, num_individuals, num_time_steps, **kwargs):
     """Get the ELD dataset."""
 
     df = pd.read_csv(os.path.join(path, "ELD", "LD2011_2014.txt"), delimiter=";", decimal=",")
@@ -137,7 +137,11 @@ def get_ELD_dataset(path, num_individuals, **kwargs):
     assert num_individuals <= len(load_data), "Too many individuals for dataset"
     load_data = load_data[:num_individuals]
     min_length = min(len(load) for load in load_data)
-    load_data = [load[:min_length] for load in load_data]
+    if min_length < num_time_steps:
+        raise ValueError(f"Too large num_time_steps, {min_length=}")
+    if num_time_steps <= 0:
+        raise ValueError("Invalid num_time_steps")
+    load_data = [load[:num_time_steps] for load in load_data]
 
     data = np.array(load_data)
     data = np.expand_dims(data, -1)
