@@ -133,14 +133,12 @@ def get_ELD_dataset(path, num_individuals, num_time_steps, **kwargs):
 
         load_data.append(load)
 
-    load_data.sort(key=lambda x: len(x), reverse=True)
+    # Filter out shorter time series
+    load_data = [load for load in load_data if len(load) >= num_time_steps]
     assert num_individuals <= len(load_data), "Too many individuals for dataset"
+
+    random.shuffle(load_data)
     load_data = load_data[:num_individuals]
-    min_length = min(len(load) for load in load_data)
-    if min_length < num_time_steps:
-        raise ValueError(f"Too large num_time_steps, {min_length=}")
-    if num_time_steps <= 0:
-        raise ValueError("Invalid num_time_steps")
     load_data = [load[:num_time_steps] for load in load_data]
 
     data = np.array(load_data)
