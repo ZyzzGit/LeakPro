@@ -250,14 +250,20 @@ class AbstractMIA(AbstractAttack):
             if extra is None or "optuna" not in extra:
                 continue
 
-            self.optuna_params += 1 # one more parameter to be optimized
-
             user_provided_value = user_attack_config.get(field_name)
-            # remove the optuna dict to prevent the parameter to get optimized if the user has provided a value
             if user_provided_value is not None:
                 self.configs.model_fields[field_name].json_schema_extra = None
-                self.optuna_params -= 1 # remove one parameter going into optuna
                 logger.info(f"User provided value for {field_name}, it won't be optimized by optuna.")
+                continue
+
+            if self.configs.model_fields[field_name].json_schema_extra["optuna"].get("enabled_if"):
+                if not self.configs.model_fields[field_name].json_schema_extra["optuna"]["enabled_if"](self.configs):
+                    logger.info(f"User has not provided for {field_name}, but field is not enabled and it won't be optimized by optuna.")
+                    continue
+
+            self.optuna_params += 1 # one more parameter to be optimized
+            logger.info(f"User has not provided value for {field_name}, it will be optimized by optuna.")
+
 
     @property
     def population(self:Self)-> List:
