@@ -281,6 +281,12 @@ class MIAResult:
 
         attack_name = attack_obj.__class__.__name__.lower()
         save_path = f"{output_dir}/results/{self.id}"
+
+        # Trim the file name if it exceeds OS limit
+        max_name_len = os.pathconf('/', 'PC_NAME_MAX')
+        if max_name_len < len(self.id):
+            save_path = f"{output_dir}/results/{self.id[:max_name_len]}"
+
         self._create_dir(save_path)
 
         # Create directory for saving data objects
