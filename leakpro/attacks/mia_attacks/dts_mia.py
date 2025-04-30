@@ -26,7 +26,7 @@ class AttackDTS(AbstractMIA):
 
         num_shadow_models: int = Field(default=16, ge=1, description="Number of shadow models")
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
-        online: bool = Field(default=True, description="Online vs offline attack") # TODO: Fix offline version
+        online: bool = Field(default=True, description="Online vs offline attack: whether the shadow models' training data includes the audit set (online) or excludes it (offline)")
         clf_model: Literal["LSTM", "InceptionTime"] = Field(default="LSTM", description="MI classifier model to use [LSTM, InceptionTime]")
         clf_model_kwargs: Dict[str, Any] = Field(default=None, description="Dictionary of additional keyword arguments passed to the classifier model constructor. See LeakPro/leakpro/attacks/utils/clf_mia_classifier/models for possible/default arguments")
         clf_data_fraction: float = Field(default=0.1, ge=0.0, le=1.0, description="Fraction of shadow population to predict for each shadow model and append to the MI classifier data set")
@@ -80,9 +80,6 @@ class AttackDTS(AbstractMIA):
 
         self.shadow_models = []
 
-        if self.online is False:
-            raise NotImplementedError("Offline mode not yet implemented.")
-
     def description(self:Self) -> dict: 
         """Return a description of the attack."""
         title_str = "Deep Time Series Attack"
@@ -118,8 +115,8 @@ class AttackDTS(AbstractMIA):
                                                     desc=f"Constructing MI classifier dataset from {self.num_shadow_models} shadow models' forecasts"):
 
             # Select specified fraction of random indices from audit population
-            data_size = int(len(self.audit_data_indices)*self.clf_data_fraction)
-            data_indices = np.random.choice(self.audit_data_indices, data_size, replace=False)
+            data_size = int(len(self.attack_data_indices)*self.clf_data_fraction)
+            data_indices = np.random.choice(self.attack_data_indices, data_size, replace=False)
             data_loader = self.handler.get_dataloader(data_indices, batch_size=self.clf_batch_size, shuffle=False)
             assert isinstance(data_loader.sampler, SequentialSampler), "DataLoader must not shuffle data to maintain order of indices"
 
