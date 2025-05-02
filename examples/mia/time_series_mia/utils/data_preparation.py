@@ -60,23 +60,40 @@ def get_ECG_dataset(path, num_individuals, k_lead=12, **kwargs):
     return all_raw_time_series
 
 
-def get_edf_time_series(edf_data, k_lead, num_time_steps):
+def get_edf_time_series(edf_data, k_lead, num_time_steps, num_initial_time_steps_to_cut):
     time_series = edf_data.get_data()
-    time_series = time_series.T                     # transpose to get sample dimension first
-    return time_series[:num_time_steps, :k_lead]    # select first num_timesteps of the k first variables
+    time_series = time_series.T # transpose to get sample dimension first
+    
+    start = num_initial_time_steps_to_cut
+    end = start + num_time_steps
+    if end > time_series.shape[0]:
+        raise ValueError(f"Tried to sample steps [{start}, {end}) from time series of length {time_series.shape[0]}.")
 
-def get_EEG_dataset(path, num_individuals, k_lead=3, num_time_steps=75000, **kwargs):
-    """Get the EEG dataset. Assuming subset of first 100 patients (EEG/000)."""
-    # num_time_steps is the fixed number of steps to use from each individual; cutting the longer series and ignoring shorter ones
-    # default: 75000 steps (equivalent to 5 minutes when sampling at 250Hz)
+    return time_series[start:end, :k_lead]  # select first num_timesteps of the k first variables after cutting the first num_initial_time_steps_to_cut
 
-    data_path = os.path.join(path, 'EEG/000')
+def get_EEG_dataset(path, num_individuals, k_lead=3, num_time_steps=30000, **kwargs):
+    """Get the EEG dataset. Assuming subjects are placed in data/EEG (no subfolders '000', '001', etc).
+        num_time_steps is the fixed number of steps to use from each individual; cutting the longer series and ignoring shorter ones
+        default: 30000 steps (equivalent to 2 minutes when sampling at 250Hz)
+    """
+    # Fix sample frequency for all individual time series
+    sample_frequency = 250
+
+    # Cut the first minute of each time series to avoid initial artificial signals (possibly artifacts, test signals, calibrations, etc) present in some subjects
+    num_intial_seconds_to_cut = 60
+    num_initial_time_steps_to_cut = sample_frequency * num_intial_seconds_to_cut
+
+    # Minimum time series length to match num_time_steps after cutting first minute
+    min_n_times = num_time_steps + num_initial_time_steps_to_cut
+
+    data_path = os.path.join(path, 'EEG')
     subjects = os.listdir(data_path)
-    random.shuffle(subjects)   # randomize order of individuals
+    random.shuffle(subjects)   # shuffle subject list to ensure random selection order
 
-    individuals = []    # individuals[i] is the token (time series) of individual i closest to num_time_steps (but not shorter) in length
+    # Randomly select EEG recordings from unique subjects (at most one recording per subject)
+    selected_individuals = []
     for subject in subjects:
-        best_token = None
+        subject_tokens = [] # all valid tokens for current subject (potentially from multiple sessions)
         for session in os.listdir(os.path.join(data_path, subject)):
             dirs = os.listdir(os.path.join(data_path, f'{subject}/{session}'))
             if len(dirs) > 1:
@@ -85,21 +102,21 @@ def get_EEG_dataset(path, num_individuals, k_lead=3, num_time_steps=75000, **kwa
             for token in os.listdir(os.path.join(data_path, f'{subject}/{session}/{montage_definition}')):
                 file = os.path.join(data_path, f'{subject}/{session}/{montage_definition}/{token}')
                 data = read_raw_edf(file, verbose=False)
-                if data.info['sfreq'] != 250 or data.n_times < num_time_steps:
-                    continue    # skip data not sampled at a frequency of 250 Hz or long enough
-                if best_token == None or data.n_times < best_token.n_times:
-                    best_token = data   # update best token to be data closest to num_time_steps
+                if data.info['sfreq'] == sample_frequency and data.n_times >= min_n_times:
+                    subject_tokens.append(data) # keep only data sampled at a frequency of 250 Hz and long enough
 
-        if best_token:
-            individuals.append(best_token)
+        # Randomly select one valid recording from this subject (if any)
+        if len(subject_tokens) > 0:
+            selected_individuals.append(random.choice(subject_tokens))
+        
+        # Stop when the desired number of individuals is reached
+        if len(selected_individuals) == num_individuals:
+            break
 
-    # Get the shortest individual time series and trim to the requested length
-    # (this ensures we discard as few time steps as possible)
-    individuals.sort(key=lambda ts: ts.n_times)
-    selected_individuals = individuals[:num_individuals]
+    # Trim and return the selected time series
     if len(selected_individuals) < num_individuals:
-        logger.warning(f"num_individuals = {num_individuals} but only found {len(selected_individuals)} with num_time_steps >= {num_time_steps}. Proceeding with {len(selected_individuals)} individuals.")
-    trimmed_selected_time_series = np.array([get_edf_time_series(ind, k_lead, num_time_steps) for ind in selected_individuals])
+        logger.warning(f"num_individuals = {num_individuals} but only found {len(selected_individuals)} with num_time_steps >= {num_time_steps} after cutting first minute (avoiding potential artificial signals). Proceeding with {len(selected_individuals)} individuals.")
+    trimmed_selected_time_series = np.array([get_edf_time_series(individual, k_lead, num_time_steps, num_initial_time_steps_to_cut) for individual in selected_individuals])
     return trimmed_selected_time_series
 
 
