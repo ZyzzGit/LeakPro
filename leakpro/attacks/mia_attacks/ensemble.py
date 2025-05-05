@@ -266,6 +266,7 @@ class AttackEnsemble(AbstractMIA):
         # Return a result object containing predictions, true labels, and the signal values for further evaluation
         return MIAResult.from_full_scores(true_membership=true_labels,
                                     signal_values=signal_values,
-                                    result_name="Ensemble")
+                                    result_name="Ensemble",
+                                    metadata=self.configs.model_dump())
 
 
