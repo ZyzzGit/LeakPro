@@ -1,76 +1,81 @@
 """Implementation of the RMIA-Direct attack."""
+import os
+from typing import Literal
 
 import numpy as np
+from pydantic import BaseModel, Field, model_validator
 from scipy.stats import norm
 from tqdm import tqdm
 
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
-from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
+from leakpro.attacks.utils.utils import softmax_logits
+from leakpro.input_handler.mia_handler import MIAHandler
 from leakpro.reporting.mia_result import MIAResult
 from leakpro.signals.signal import get_signal_from_name
-from leakpro.utils.import_helper import Self
+from leakpro.utils.import_helper import Self, Tuple
 from leakpro.utils.logger import logger
 
 
 class AttackRMIADirect(AbstractMIA):
     """Implementation of the RMIA-Direct attack."""
 
+    class AttackConfig(BaseModel):
+        """Configuration for the RMIA attack."""
+
+        
+        signal_name: str = Field(default="ModelRescaledLogits", description="What signal to use.")
+        num_shadow_models: int = Field(default=2,
+                                       ge=2,
+                                       description="Number of shadow models")
+        training_data_fraction: float = Field(default=0.5,
+                                              ge=0.0,
+                                              le=1.0,
+                                              description="Part of available attack data to use for shadow models")
+        attack_data_fraction: float = Field(default=0.1,
+                                            ge=0.0,
+                                            le=1.0,
+                                            description="Part of available attack data to use for attack")
+        online: bool = Field(default=False,
+                             description="Online vs offline attack")
+        # Parameters to be used with optuna
+        gamma: float = Field(default=2.0,
+                        ge=0.0,
+                        description="Parameter to threshold LLRs")
+
+
     def __init__(self:Self,
-                 handler: AbstractInputHandler,
+                 handler: MIAHandler,
                  configs: dict
                  ) -> None:
-        """Initialize the RMIA-Direct attack.
+        """Initialize the RMIA attack.
 
         Args:
         ----
-            handler (AbstractInputHandler): The input handler object.
+            handler (MIAHandler): The input handler object.
             configs (dict): Configuration parameters for the attack.
 
         """
-        # Initializes the parent metric
+        logger.info("Configuring the RMIA-Direct attack")
+        # Initializes the pydantic object using the user-provided configs
+        # This will ensure that the user-provided configs are valid
+        self.configs = self.AttackConfig() if configs is None else self.AttackConfig(**configs)
+
+        # Call the parent class constructor. It will check the configs.
         super().__init__(handler)
+
+        # Assign the configuration parameters to the object
+        for key, value in self.configs.model_dump().items():
+            setattr(self, key, value)
+
+        if self.online is False:
+            raise ValueError("Only online RMIA-Direct is defined.")
+
         self.shadow_models = []
+        self.signal = get_signal_from_name(self.signal_name)
         self.epsilon = 1e-6
         self.shadow_models = None
         self.shadow_model_indices = None
-
-        logger.info("Configuring RMIA-Direct attack")
-        self._configure_attack(configs)
-
-
-    def _configure_attack(self:Self, configs: dict) -> None:
-        """Configure the RMIA-Direct attack.
-
-        Args:
-        ----
-            configs (dict): Configuration parameters for the attack.
-
-        """
-        self.num_shadow_models = configs.get("num_shadow_models", 4)
-        self.gamma = configs.get("gamma", 2.0)
-        self.training_data_fraction = configs.get("training_data_fraction", 0.5)
-        self.attack_data_fraction = configs.get("attack_data_fraction", 0.1)
-        self.online = configs.get("online", True)
-        signal_name = configs.get("signal", "ModelRescaledLogits")
-        self.signal = get_signal_from_name(signal_name)
-        # Determine which variance estimation method to use [carlini, individual_carlini, fixed]
-        self.var_calculation = configs.get("var_calculation", "carlini")
-
-        if not self.online:
-            raise AttributeError("Only online attack supported")
-
-        # Define the validation dictionary as: {parameter_name: (parameter, min_value, max_value)}
-        validation_dict = {
-            "num_shadow_models": (self.num_shadow_models, 1, None),
-            "gamma": (self.gamma, 0, None),
-            "training_data_fraction": (self.training_data_fraction, 0, 1),
-            "attack_data_fraction": (self.attack_data_fraction, 0, 1),
-        }
-
-        # Validate parameters
-        for param_name, (param_value, min_val, max_val) in validation_dict.items():
-            self._validate_config(param_name, param_value, min_val, max_val)
 
     def description(self:Self) -> dict:
         """Return a description of the attack."""
@@ -96,10 +101,6 @@ class AttackRMIADirect(AbstractMIA):
         Signals are computed on the auxiliary model(s) and dataset.
         """
 
-        # Fixed variance is used when the number of shadow models is below 32 (64, IN and OUT models)
-        #       from (Membership Inference Attacks From First Principles)
-        self.fix_var_threshold = 32
-
         logger.info("Preparing shadow models for RMIA-Direct attack")
         # Check number of shadow models that are available
 
@@ -107,7 +108,8 @@ class AttackRMIADirect(AbstractMIA):
         logger.info("Preparing attack data for training the RMIA-Direct attack")
 
         # Get all available indices for attack dataset, if self.online = True, include training and test data
-        self.attack_data_indices = self.sample_indices_from_population(include_train_indices = self.online,
+        self.attack_data_indices = self.sample_indices_from_population(include_aux_indices = not self.online,
+                                                                       include_train_indices = self.online,
                                                                        include_test_indices = self.online)
 
         # train shadow models
@@ -119,45 +121,6 @@ class AttackRMIADirect(AbstractMIA):
             online = self.online)
         # load shadow models
         self.shadow_models, _ = ShadowModelHandler().get_shadow_models(self.shadow_model_indices)
-
-
-    def get_std(self:Self, logits: list, mask: list, is_in: bool, var_calculation: str) -> np.ndarray:
-        """A function to define what method to use for calculating variance for LiRA."""
-
-        # Fixed/Global variance calculation.
-        if var_calculation == "fixed":
-            return self._fixed_variance(logits, mask, is_in)
-
-        # Variance calculation as in the paper ( Membership Inference Attacks From First Principles )
-        if var_calculation == "carlini":
-            return self._carlini_variance(logits, mask, is_in)
-
-        # Variance calculation as in the paper ( Membership Inference Attacks From First Principles )
-        #   but check IN and OUT samples individualy
-        if var_calculation == "individual_carlini":
-            return self._individual_carlini(logits, mask, is_in)
-
-        return np.array([None])
-
-    def _fixed_variance(self:Self, logits: list, mask: list, is_in: bool) -> np.ndarray:
-        if is_in and not self.online:
-            return np.array([None])
-        return np.std(logits[mask])
-
-    def _carlini_variance(self:Self, logits: list, mask: list, is_in: bool) -> np.ndarray:
-        if self.num_shadow_models >= self.fix_var_threshold*2:
-            return np.std(logits[mask])
-        if is_in:
-            return self.fixed_in_std
-        return self.fixed_out_std
-
-    def _individual_carlini(self:Self, logits: list, mask: list, is_in: bool) -> np.ndarray:
-        if np.count_nonzero(mask) >= self.fix_var_threshold:
-            return np.std(logits[mask])
-        if is_in:
-            return self.fixed_in_std
-        return self.fixed_out_std
-
 
     def run_attack(self:Self) -> MIAResult:
         """Run the attack on the target model and dataset.
@@ -200,12 +163,10 @@ class AttackRMIADirect(AbstractMIA):
         x_logits_target_model = np.array(self.signal([self.target_model], self.handler, audit_data_indices)).squeeze()
         x_logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, audit_data_indices))
         
-        self.fixed_in_std = self.get_std(x_logits_shadow_models.flatten(), in_indices_mask.flatten(), True, "fixed")
-        self.fixed_out_std = self.get_std(x_logits_shadow_models.flatten(), (~in_indices_mask).flatten(), False, "fixed")
-
         # Make a "random sample" to compute p(z) for points in attack dataset on the OUT shadow models for each audit point
-        self.attack_data_index = self.sample_indices_from_population(include_train_indices = False,
-                                                                     include_test_indices = False)
+        self.attack_data_index = self.sample_indices_from_population(include_aux_indices= not self.online,
+                                                                     include_train_indices = self.online,
+                                                                     include_test_indices = self.online)
         if len(self.attack_data_index) == 0:
             raise ValueError("There are no auxilliary points to use for the attack.")
         n_attack_points = int(self.attack_data_fraction * len(self.attack_data_index))
@@ -225,33 +186,34 @@ class AttackRMIADirect(AbstractMIA):
         z_logits_target_model = np.array(self.signal([self.target_model], self.handler, self.attack_data_index)).squeeze()
         z_logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, self.attack_data_index))
 
-        log_likelihoods = np.ndarray((n_audit_points, n_attack_points))
-
+        score = np.zeros(n_audit_points)
         for i in tqdm(range(n_audit_points), desc="Calculating likelihoods"):
-            for j in range(n_attack_points):
-                x_mask = ~attack_data_in_indices_mask[:, j] & in_indices_mask[:, i]
-                z_mask = attack_data_in_indices_mask[:, j] & ~in_indices_mask[:, i]
+            x_mask = ~attack_data_in_indices_mask & in_indices_mask[:, i:i+1] # shape (num_shadow_models, num_z)
+            z_mask = attack_data_in_indices_mask & ~in_indices_mask[:, i:i+1] # shape (num_shadow_models, num_z)
 
-                if sum(x_mask) == 0 or sum(z_mask) == 0:
-                    logger.info("error, x_mask or z_mask empty")
-                    logger.info(attack_data_in_indices_mask[:, j], in_indices_mask[:, i])
-                    logger.info(~attack_data_in_indices_mask[:, j], ~in_indices_mask[:, i])
-                    logger.info(x_mask, z_mask)
-                    log_likelihoods[i, j] = -np.inf
-                    continue
+            valid_z = (np.sum(x_mask, axis=0) != 0) & (np.sum(z_mask, axis=0) != 0)
+            num_valid_z = np.sum(valid_z)
+            x_mask = x_mask[:, valid_z] # shape (num_shadow_models, num_valid_z)
+            z_mask = z_mask[:, valid_z] # shape (num_shadow_models, num_valid_z)
 
-                def log_pr_logit(shadow_models_logits, mask, is_in, target_logit):
-                    mean = np.mean(shadow_models_logits[mask])
-                    std = self.get_std(shadow_models_logits, mask, is_in, self.var_calculation)
+            
+            #logger.info(x_mask.shape, z_mask.shape)
 
-                    return norm.logpdf(target_logit, mean, std + self.epsilon)
-                
-                x_ratio = log_pr_logit(x_logits_shadow_models[:, i], x_mask, True, x_logits_target_model[i]) - log_pr_logit(x_logits_shadow_models[:, i], z_mask, True, x_logits_target_model[i])
-                z_ratio = log_pr_logit(z_logits_shadow_models[:, i], x_mask, True, z_logits_target_model[i]) - log_pr_logit(z_logits_shadow_models[:, i], z_mask, True, z_logits_target_model[i])
-                log_likelihoods[i, j] = x_ratio + z_ratio
+            x_sm = x_logits_shadow_models[:, i:i+1].repeat(num_valid_z, axis=1) # shape (num_shadow_models, num_valid_z)
+            x_tgt = x_logits_target_model[i:i+1].repeat(num_valid_z) # shape (num_valid_z,)
 
-        # Determine score as fraction of sampled points z that exceed threshold gamma
-        score = np.mean(log_likelihoods > np.log(self.gamma), axis=1)
+            z_sm = z_logits_shadow_models[:, valid_z] # shape (num_shadow_models, num_valid_z)
+            z_tgt = z_logits_target_model[valid_z] # shape (num_valid_z,)
+
+            #print(x_sm.shape, x_tgt.shape, z_sm.shape, z_tgt.shape)
+
+            x_ratio_numer = norm.logpdf(x_tgt, np.mean(x_sm, where=x_mask, axis=0), np.std(x_sm, where=x_mask, axis=0) + self.epsilon)
+            x_ratio_denom = norm.logpdf(x_tgt, np.mean(x_sm, where=z_mask, axis=0), np.std(x_sm, where=z_mask, axis=0) + self.epsilon)
+            z_ratio_numer = norm.logpdf(z_tgt, np.mean(z_sm, where=x_mask, axis=0), np.std(z_sm, where=x_mask, axis=0) + self.epsilon)
+            z_ratio_denom = norm.logpdf(z_tgt, np.mean(z_sm, where=z_mask, axis=0), np.std(z_sm, where=z_mask, axis=0) + self.epsilon)
+            log_pr = x_ratio_numer + z_ratio_numer - x_ratio_denom - z_ratio_denom
+            log_pr = log_pr[~np.isnan(log_pr)]
+            score[i] = np.mean(log_pr > self.gamma)
 
         # pick out the in-members and out-members signals
         self.in_member_signals = score[in_members].reshape(-1,1)
@@ -270,6 +232,7 @@ class AttackRMIADirect(AbstractMIA):
 
         return MIAResult.from_full_scores(true_membership=true_labels,
                                     signal_values=signal_values,
-                                    result_name="MS-LiRA")
+                                    result_name="RMIA-Direct",
+                                    metadata=self.configs.model_dump())
 
 
