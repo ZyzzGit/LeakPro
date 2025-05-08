@@ -160,7 +160,7 @@ def get_ELD_dataset(path, num_individuals, num_time_steps, **kwargs):
 
     data = np.array(load_data)
     data = np.expand_dims(data, -1)
-    return data 
+    return data
 
 
 def get_LCL_dataset(path, num_individuals, **kwargs):
