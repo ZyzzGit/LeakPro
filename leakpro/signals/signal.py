@@ -448,6 +448,7 @@ class TS2VecLoss(Signal):
 
         logger.info("Getting TS2Vec loss for targets")
         ts2vec_true = ts2vec_model.encode(np.array(handler.population.targets)[indices], encoding_window='full_series', batch_size=batch_size)
+        logger.info("Getting TS2Vec loss for model outputs")
         results = []
         for model in tqdm(models, desc="Getting TS2Vec loss"):
             model_outputs, _ = self.get_model_output(model, handler, indices)
