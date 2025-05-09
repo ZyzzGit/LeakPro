@@ -152,7 +152,8 @@ def get_ELD_dataset(path, num_individuals, num_time_steps, **kwargs):
 
     # Filter out shorter time series
     load_data = [load for load in load_data if len(load) >= num_time_steps]
-    assert num_individuals <= len(load_data), "Too many individuals for dataset"
+    load_data = [load for load in load_data if np.mean(load) <= 2000 and np.mean(load) >= 200]
+    assert num_individuals <= len(load_data), "Too few individuals in dataset (after filtering)"
 
     random.shuffle(load_data)
     load_data = load_data[:num_individuals]
