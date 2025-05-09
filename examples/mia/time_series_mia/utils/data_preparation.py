@@ -72,7 +72,7 @@ def get_edf_time_series(edf_data, k_lead, num_time_steps, num_initial_time_steps
     return time_series[start:end, :k_lead]  # select first num_timesteps of the k first variables after cutting the first num_initial_time_steps_to_cut
 
 def get_EEG_dataset(path, num_individuals, k_lead=3, num_time_steps=30000, **kwargs):
-    """Get the EEG dataset. Assuming subjects are placed in data/EEG (no subfolders '000', '001', etc).
+    """Get the EEG dataset. Assuming subjects are placed in data/EEG with subfolders '000', '001', etc (as original structure).
         num_time_steps is the fixed number of steps to use from each individual; cutting the longer series and ignoring shorter ones
         default: 30000 steps (equivalent to 2 minutes when sampling at 250Hz)
     """
@@ -87,7 +87,10 @@ def get_EEG_dataset(path, num_individuals, k_lead=3, num_time_steps=30000, **kwa
     min_n_times = num_time_steps + num_initial_time_steps_to_cut
 
     data_path = os.path.join(path, 'EEG')
-    subjects = os.listdir(data_path)
+    subjects = []
+    for subdir in os.listdir(data_path):
+        for subject in os.listdir(os.path.join(data_path, subdir)):
+            subjects.append(f'{subdir}/{subject}')
     random.shuffle(subjects)   # shuffle subject list to ensure random selection order
 
     # Randomly select EEG recordings from unique subjects (at most one recording per subject)
