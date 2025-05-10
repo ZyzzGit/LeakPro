@@ -279,9 +279,9 @@ def preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, s
 
     # Load dataset if already exists on path
     dataset = None
-    if os.path.exists(f"{path}/{dataset_name}.pkl"):
-        with open(f"{path}/{dataset_name}.pkl", "rb") as f:
-            dataset = joblib.load(f)
+    #if os.path.exists(f"{path}/{dataset_name}.pkl"):
+    #    with open(f"{path}/{dataset_name}.pkl", "rb") as f:
+    #        dataset = joblib.load(f)
 
     # If all parameters matches, we're done; return it
     if dataset_matches_params(dataset_name, dataset, lookback, horizon, num_individuals, stride, scaling, val_fraction, **kwargs):
