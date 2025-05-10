@@ -427,8 +427,11 @@ class TS2VecLoss(Signal):
             The signal value.
 
         """
+        import torch
+        torch.backends.cudnn.deterministic = False
         _, _, num_variables = handler.population.targets.shape
         batch_size = handler.get_dataloader(indices, shuffle=False).batch_size
+        logger.info(f"Using TS2Vec batch size {batch_size}")
 
         # Check if representation model is available
         ts2vec_model_path = 'data/ts2vec_model.pkl'
@@ -439,6 +442,7 @@ class TS2VecLoss(Signal):
         # Load represenation model
         # TODO: check why cuda batch encoding is so freaking slow. For now, force cpu
         device = "cuda:0" if cuda.is_available() else "cpu" 
+        logger.info(f"TS2Vec running on {device}")
         ts2vec_model = TS2Vec(
             input_dims=num_variables,
             device=device,
