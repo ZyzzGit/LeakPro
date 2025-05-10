@@ -132,4 +132,4 @@ if __name__ == "__main__":
     leakpro = LeakPro(IndividualizedInputHandler, audit_config_path)
 
     # Run the audit 
-    mia_results = leakpro.run_audit(create_pdf=True, use_optuna=False)
+    mia_results = leakpro.run_audit(create_pdf=False, use_optuna=False)
