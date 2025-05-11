@@ -139,6 +139,8 @@ class AttackRMIA(AbstractMIA):
         self.attack_data_indices = self.sample_indices_from_population(include_aux_indices = not self.online,
                                                                        include_train_indices = self.online,
                                                                        include_test_indices = self.online)
+        
+        self.ts2vec_params = ([self.attack_data_indices] if self.signal_name == 'TS2VecLoss' else [])
 
         # train shadow models
         logger.info(f"Check for {self.num_shadow_models} shadow models (dataset: {len(self.attack_data_indices)} points)")
@@ -169,14 +171,14 @@ class AttackRMIA(AbstractMIA):
         np.save(f_z_true_labels, z_true_labels)
 
         # run points through real model to collect the logits
-        logits_theta = np.array(self.signal([self.target_model], self.handler, chosen_attack_data_indices))
+        logits_theta = np.array(self.signal([self.target_model], self.handler, chosen_attack_data_indices, *self.ts2vec_params))
 
         # Store the ratio of p(z|theta) to p(z) for the audit dataset to be used in other optuna
         f_logits_theta = f"{self.attack_cache_folder_path}/logits_theta.npy"
         np.save(f_logits_theta, logits_theta)
 
         # run points through shadow models and collect the logits
-        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, chosen_attack_data_indices))
+        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, chosen_attack_data_indices, *self.ts2vec_params))
         f_logits_sm = f"{self.attack_cache_folder_path}/logits_shadow_models.npy"
         np.save(f_logits_sm, logits_shadow_models)
 
@@ -251,9 +253,9 @@ class AttackRMIA(AbstractMIA):
         logger.info(f"Number of points in the audit dataset that are used for online attack: {len(audit_data_indices)}")
 
         # run points through target model to get logits
-        logits_theta = np.array(self.signal([self.target_model], self.handler, audit_data_indices))
+        logits_theta = np.array(self.signal([self.target_model], self.handler, audit_data_indices, *self.ts2vec_params))
         # run points through shadow models to get logits
-        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, audit_data_indices))
+        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, audit_data_indices, *self.ts2vec_params))
 
         f_logits_theta = f"{self.attack_cache_folder_path}/logits_audit_theta.npy"
         np.save(f_logits_theta, logits_theta)
@@ -292,9 +294,9 @@ class AttackRMIA(AbstractMIA):
             z_true_labels = z_true_labels.astype(int)
 
         # run points through real model to collect the logits
-        logits_target_model = np.array(self.signal([self.target_model], self.handler, self.attack_data_index))
+        logits_target_model = np.array(self.signal([self.target_model], self.handler, self.attack_data_index, *self.ts2vec_params))
         # run points through shadow models and collect the logits
-        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, self.attack_data_index))
+        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, self.attack_data_index, *self.ts2vec_params))
 
         f_logits_target_model = f"{self.attack_cache_folder_path}/logits_aux_target_model.npy"
         np.save(f_logits_target_model, logits_target_model)
@@ -309,12 +311,12 @@ class AttackRMIA(AbstractMIA):
         """Prepare the logits for the offline attack on the audit dataset."""
 
         # run target points through real model to get logits
-        logits_theta = np.array(self.signal([self.target_model], self.handler, self.audit_dataset["data"]))
+        logits_theta = np.array(self.signal([self.target_model], self.handler, self.audit_dataset["data"], *self.ts2vec_params))
         f_logits_theta = f"{self.attack_cache_folder_path}/logits_audit_theta.npy"
         np.save(f_logits_theta, logits_theta)
 
         # run points through shadow models and collect the logits
-        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, self.audit_dataset["data"]))
+        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, self.audit_dataset["data"], *self.ts2vec_params))
         f_logits_sm = f"{self.attack_cache_folder_path}/logits_audit_shadow_models.npy"
         np.save(f_logits_sm, logits_shadow_models)
 

@@ -114,7 +114,7 @@ class AttackMSLiRA(AbstractMIA):
         self.attack_data_indices = self.sample_indices_from_population(include_aux_indices = not self.online,
                                                                        include_train_indices = self.online,
                                                                        include_test_indices = self.online)
-
+        
         self.shadow_model_indices = ShadowModelHandler().create_shadow_models(num_models = self.num_shadow_models,
                                                                               shadow_population =  self.attack_data_indices,
                                                                               training_fraction = self.training_data_fraction,
@@ -160,15 +160,19 @@ class AttackMSLiRA(AbstractMIA):
         shadow_models_signals = []
         target_model_signals = []
         for signal, signal_name in zip(self.signals, self.signal_names):
+            ts2vec_params = ([self.attack_data_indices] if signal_name == 'TS2VecLoss' else [])
+
             logger.info(f"Calculating {signal_name} for all {self.num_shadow_models} shadow models")
             shadow_models_signals.append(np.swapaxes(signal(self.shadow_models,
                                                                 self.handler,
-                                                                self.audit_data_indices), 0, 1))
+                                                                self.audit_data_indices,
+                                                                *ts2vec_params), 0, 1))
 
             logger.info(f"Calculating {signal_name} for the target model")
             target_model_signals.append(np.swapaxes(signal([self.target_model],
                                                             self.handler,
-                                                            self.audit_data_indices), 0, 1).squeeze())
+                                                            self.audit_data_indices,
+                                                            *ts2vec_params), 0, 1).squeeze())
             
         # Stack signals to get shape (n_audit_points, n_shadow_models, n_signals)
         self.shadow_models_signals = np.stack(shadow_models_signals, axis=-1)
