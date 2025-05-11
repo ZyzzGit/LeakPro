@@ -105,7 +105,6 @@ class AttackEnsemble(AbstractMIA):
         self.attack_data_indices = self.sample_indices_from_population(include_aux_indices = not self.online,
                                                                        include_train_indices = self.online,
                                                                        include_test_indices = self.online)
-        logger.info(f"{self.attack_data_indices=}")
 
         if not self.audit:
             # train shadow models
@@ -160,13 +159,17 @@ class AttackEnsemble(AbstractMIA):
             # Create set of features and in/out label for each indices in subsets
             in_features = []
             out_features = []
-            for signal in self.signals:
+            for signal, signal_name in zip(self.signals, self.signal_names):
+                ts2vec_params = ([self.attack_data_indices] if signal_name == 'TS2VecLoss' else [])
+
                 in_features.append(np.squeeze(signal([current_model],
                                                      self.handler,
-                                                     in_indices)))
+                                                     in_indices,
+                                                     *ts2vec_params)))
                 out_features.append(np.squeeze(signal([current_model],
                                                       self.handler,
-                                                      out_indices)))
+                                                      out_indices,
+                                                      *ts2vec_params)))
             in_features = np.swapaxes(np.array(in_features), 0, 1)
             out_features = np.swapaxes(np.array(out_features), 0, 1)
 
@@ -224,10 +227,12 @@ class AttackEnsemble(AbstractMIA):
         self.out_members = self.audit_dataset["out_members"]
 
         features = []
-        for signal in self.signals:
+        for signal, signal_name in zip(self.signals, self.signal_names):
+            ts2vec_params = ([self.attack_data_indices] if signal_name == 'TS2VecLoss' else [])
             features.append(np.squeeze(signal([self.target_model],
                                               self.handler,
-                                              self.audit_data_indices)))
+                                              self.audit_data_indices,
+                                              *ts2vec_params)))
         features = np.swapaxes(np.array(features), 0, 1)
         
         # Average membership score over all instances and models

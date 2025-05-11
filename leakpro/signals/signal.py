@@ -9,12 +9,10 @@ from numpy.linalg import inv, norm
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SequentialSampler
 from tqdm import tqdm
-from ts2vec import TS2Vec
-from torch import cuda
 from leakpro.utils.save_load import hash_model
 
 from leakpro.utils.logger import logger
-from leakpro.signals.utils.TS2VecTrainer import train_ts2vec
+from leakpro.signals.utils.get_TS2Vec import get_ts2vec_model
 from leakpro.signals.utils.msm import mv_msm_distance
 from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
 from leakpro.signals.signal_extractor import Model
@@ -412,6 +410,7 @@ class TS2VecLoss(Signal):
         models: List[Model],
         handler: AbstractInputHandler,
         indices: np.ndarray,
+        shadow_population_indices: np.ndarray
     ) -> List[np.ndarray]:
         """Built-in call method.
 
@@ -427,29 +426,11 @@ class TS2VecLoss(Signal):
             The signal value.
 
         """
-        import torch
-        torch.backends.cudnn.deterministic = False
-        _, _, num_variables = handler.population.targets.shape
+        # Get represenation model
         batch_size = handler.get_dataloader(indices, shuffle=False).batch_size
-        logger.info(f"Using TS2Vec batch size {batch_size}")
+        ts2vec_model = get_ts2vec_model(handler, shadow_population_indices, batch_size)
 
-        # Check if representation model is available
-        ts2vec_model_path = 'data/ts2vec_model.pkl'
-        if not os.path.exists(ts2vec_model_path):
-            logger.info("Training TS2Vec representation model")
-            train_ts2vec(handler.population.targets, num_variables)
-
-        # Load represenation model
-        # TODO: check why cuda batch encoding is so freaking slow. For now, force cpu
-        device = "cuda:0" if cuda.is_available() else "cpu" 
-        logger.info(f"TS2Vec running on {device}")
-        ts2vec_model = TS2Vec(
-            input_dims=num_variables,
-            device=device,
-            batch_size=batch_size
-        )
-        ts2vec_model.load(ts2vec_model_path)
-
+        # Get signals
         logger.info("Getting TS2Vec loss for targets")
         ts2vec_true = ts2vec_model.encode(np.array(handler.population.targets)[indices], encoding_window='full_series', batch_size=batch_size)
         logger.info("Getting TS2Vec loss for model outputs")
