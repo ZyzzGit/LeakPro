@@ -125,8 +125,7 @@ if __name__ == "__main__":
         values = [[m(*p) for m in metrics] for p in [train, test, unscaled_train, unscaled_test]]
         df = pd.DataFrame(values, columns=names, index=["Train", "Test", "Unscaled train", "Unscaled test"])
     print(df)
-    with open(f"target/{random_seed}-{dataset_name}-{model_name}.txt", "w") as f:
-        f.write(str(df))
+    df.to_csv(f"target/{random_seed}-{dataset_name}-{model_name}.csv")
 
     # Prepare leakpro object
     leakpro = LeakPro(IndividualizedInputHandler, audit_config_path)
