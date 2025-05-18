@@ -23,7 +23,7 @@ class MIClassifier():
 
         if model.lower() == "lstm":
             self.model_class = LSTMClassifier
-        elif model.lower() == "inceptiontime":
+        elif model.lower() == "inceptiontimes": # TODO: Rename IT after new runs
             self.model_class = InceptionTime
         else:
             raise ValueError(f"Unknown model: {model}. Must be one of ['LSTM', 'InceptionTime'].")
