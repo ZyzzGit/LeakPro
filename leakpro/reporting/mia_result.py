@@ -279,8 +279,11 @@ class MIAResult:
     def save(self:Self, attack_obj: Any, output_dir: str) -> None:
         """Save the MIAResults to disk."""
 
-        attack_name = attack_obj.__class__.__name__.lower()
-        save_path = f"{output_dir}/results/{self.id}"
+        attack_name = attack_obj.__class__.__name__.lower()    
+        # save_path = f"{output_dir}/results/{self.id}" # TODO: restore this after new runs
+        model = 'InceptionTimeSmall' if 'InceptionTimeS' in self.id else 'LSTMClassifier'
+        version = 'online' if 'online=True' in self.id else 'offline'
+        save_path = f"{output_dir}/results/DTS-MIA-{model}-{version}"
 
         # Trim the file name if it exceeds OS limit
         max_name_len = os.pathconf('/', 'PC_NAME_MAX')
