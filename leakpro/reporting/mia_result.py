@@ -279,8 +279,14 @@ class MIAResult:
     def save(self:Self, attack_obj: Any, output_dir: str) -> None:
         """Save the MIAResults to disk."""
 
-        attack_name = attack_obj.__class__.__name__.lower()
+        attack_name = attack_obj.__class__.__name__.lower()    
         save_path = f"{output_dir}/results/{self.id}"
+
+        # Trim the file name if it exceeds OS limit
+        max_name_len = os.pathconf('/', 'PC_NAME_MAX')
+        if max_name_len < len(self.id):
+            save_path = f"{output_dir}/results/{self.id[:max_name_len]}"
+
         self._create_dir(save_path)
 
         # Create directory for saving data objects
@@ -300,8 +306,8 @@ class MIAResult:
             json.dump(self.result.model_dump(), f, default=json_fallback)
 
         # Store results for user output
-        with open(f"{save_path}/result.txt", "w") as f:
-            f.write(str(self.result.model_dump()))
+        with open(f"{save_path}/result.json", "w") as f:
+            json.dump(self.result.model_dump(), f, default=json_fallback)
 
         # Create ROC plot
         if self._has_roc():
@@ -374,6 +380,10 @@ class MIAResult:
         obj.fp = mia_data.fp
         obj.tn = mia_data.tn
         obj.fn = mia_data.fn
+        obj.roc_mode = "full"
+        if len(obj.tp) == 1:
+            obj.roc_mode = "none"
+        obj.result = obj._make_result_object()
 
         return obj
 

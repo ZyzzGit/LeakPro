@@ -136,7 +136,7 @@ class ShadowModelHandler(ModelHandler):
 
         for i in indices_to_use:
             # Get dataloader
-            data_indices = np.random.choice(shadow_population, data_size, replace=False)
+            data_indices = self.handler.sample_shadow_indices(shadow_population, training_fraction)
             data_loader = self.handler.get_dataloader(data_indices, params=None)
 
             # Get shadow model blueprint
@@ -180,7 +180,7 @@ class ShadowModelHandler(ModelHandler):
                 target_model_hash= self.target_model_hash
             )
 
-            logger.info(f"Metadata for shadow model {i}:\n{meta_data}")
+            #logger.info(f"Metadata for shadow model {i}:\n{meta_data}")
             with open(f"{self.storage_path}/{self.metadata_storage_name}_{i}.pkl", "wb") as f:
                 pickle.dump(meta_data, f)
 

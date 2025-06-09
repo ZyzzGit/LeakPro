@@ -1,15 +1,17 @@
 """Implementation of the RMIA attack."""
 import os
+from typing import Literal
 
 import numpy as np
 from pydantic import BaseModel, Field, model_validator
+from tqdm import tqdm
 
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.attacks.utils.utils import softmax_logits
 from leakpro.input_handler.mia_handler import MIAHandler
 from leakpro.reporting.mia_result import MIAResult
-from leakpro.signals.signal import ModelLogits
+from leakpro.signals.signal import get_signal_from_name
 from leakpro.utils.import_helper import Self, Tuple
 from leakpro.utils.logger import logger
 
@@ -20,6 +22,9 @@ class AttackRMIA(AbstractMIA):
     class AttackConfig(BaseModel):
         """Configuration for the RMIA attack."""
 
+        
+        signal_name: str = Field(default="ModelRescaledLogits", description="What signal to use.")
+        transformation_name: Literal["recip", "reciplog", "arctan"] = Field(default="recip", description='Transformation to use ["recip", "reciplog", "arctan"]')  # noqa: E501
         num_shadow_models: int = Field(default=1,
                                        ge=1,
                                        description="Number of shadow models")
@@ -93,7 +98,12 @@ class AttackRMIA(AbstractMIA):
                     There is no data left for the shadow models.")
 
         self.shadow_models = []
-        self.signal = ModelLogits()
+        self.signal = get_signal_from_name(self.signal_name)
+        self.transformation = {
+            "recip": lambda x: 1 / (x + 1), 
+            "reciplog": lambda x: 1 / np.log(x + np.e), 
+            "arctan": lambda x: 1 / (np.arctan(x) + 1),
+        }[self.transformation_name]
         self.epsilon = 1e-6
         self.shadow_models = None
         self.shadow_model_indices = None
@@ -125,8 +135,11 @@ class AttackRMIA(AbstractMIA):
     def _prepare_shadow_models(self:Self) -> None:
 
         # Get all available indices for attack dataset, if self.online = True, include training and test data
-        self.attack_data_indices = self.sample_indices_from_population(include_train_indices = self.online,
-                                                                    include_test_indices = self.online)
+        self.attack_data_indices = self.sample_indices_from_population(include_aux_indices = not self.online,
+                                                                       include_train_indices = self.online,
+                                                                       include_test_indices = self.online)
+        
+        self.ts2vec_params = ([self.attack_data_indices] if self.signal_name == 'TS2VecLoss' else [])
 
         # train shadow models
         logger.info(f"Check for {self.num_shadow_models} shadow models (dataset: {len(self.attack_data_indices)} points)")
@@ -157,14 +170,14 @@ class AttackRMIA(AbstractMIA):
         np.save(f_z_true_labels, z_true_labels)
 
         # run points through real model to collect the logits
-        logits_theta = np.array(self.signal([self.target_model], self.handler, chosen_attack_data_indices))
+        logits_theta = np.array(self.signal([self.target_model], self.handler, chosen_attack_data_indices, *self.ts2vec_params))
 
         # Store the ratio of p(z|theta) to p(z) for the audit dataset to be used in other optuna
         f_logits_theta = f"{self.attack_cache_folder_path}/logits_theta.npy"
         np.save(f_logits_theta, logits_theta)
 
         # run points through shadow models and collect the logits
-        logits_shadow_models = self.signal(self.shadow_models, self.handler, chosen_attack_data_indices)
+        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, chosen_attack_data_indices, *self.ts2vec_params))
         f_logits_sm = f"{self.attack_cache_folder_path}/logits_shadow_models.npy"
         np.save(f_logits_sm, logits_shadow_models)
 
@@ -195,11 +208,13 @@ class AttackRMIA(AbstractMIA):
 
             # collect the softmax output of the correct class
             n_attack_points = len(z_true_labels)
-            p_z_given_theta = softmax_logits(logits_theta, self.temperature)[:,np.arange(n_attack_points),z_true_labels]
+            #p_z_given_theta = softmax_logits(logits_theta, self.temperature)[:,np.arange(n_attack_points),z_true_labels]
+            p_z_given_theta = self.transformation(logits_theta[:, np.arange(n_attack_points)])
 
             # collect the softmax output of the correct class for each shadow model
-            sm_logits_shadow_models = [softmax_logits(x, self.temperature) for x in logits_shadow_models]
-            p_z_given_shadow_models = np.array([x[np.arange(n_attack_points),z_true_labels] for x in sm_logits_shadow_models])
+            #sm_logits_shadow_models = [softmax_logits(x, self.temperature) for x in logits_shadow_models]
+            #p_z_given_shadow_models = np.array([x[np.arange(n_attack_points),z_true_labels] for x in sm_logits_shadow_models])
+            p_z_given_shadow_models = self.transformation(logits_shadow_models[:, np.arange(n_attack_points)])
 
             # evaluate the marginal p(z)
             p_z = np.mean(p_z_given_shadow_models, axis=0) if len(self.shadow_models) > 1 else p_z_given_shadow_models.squeeze()
@@ -237,9 +252,9 @@ class AttackRMIA(AbstractMIA):
         logger.info(f"Number of points in the audit dataset that are used for online attack: {len(audit_data_indices)}")
 
         # run points through target model to get logits
-        logits_theta = np.array(self.signal([self.target_model], self.handler, audit_data_indices))
+        logits_theta = np.array(self.signal([self.target_model], self.handler, audit_data_indices, *self.ts2vec_params))
         # run points through shadow models to get logits
-        logits_shadow_models = self.signal(self.shadow_models, self.handler, audit_data_indices)
+        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, audit_data_indices, *self.ts2vec_params))
 
         f_logits_theta = f"{self.attack_cache_folder_path}/logits_audit_theta.npy"
         np.save(f_logits_theta, logits_theta)
@@ -278,9 +293,9 @@ class AttackRMIA(AbstractMIA):
             z_true_labels = z_true_labels.astype(int)
 
         # run points through real model to collect the logits
-        logits_target_model = np.array(self.signal([self.target_model], self.handler, self.attack_data_index))
+        logits_target_model = np.array(self.signal([self.target_model], self.handler, self.attack_data_index, *self.ts2vec_params))
         # run points through shadow models and collect the logits
-        logits_shadow_models = self.signal(self.shadow_models, self.handler, self.attack_data_index)
+        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, self.attack_data_index, *self.ts2vec_params))
 
         f_logits_target_model = f"{self.attack_cache_folder_path}/logits_aux_target_model.npy"
         np.save(f_logits_target_model, logits_target_model)
@@ -295,12 +310,12 @@ class AttackRMIA(AbstractMIA):
         """Prepare the logits for the offline attack on the audit dataset."""
 
         # run target points through real model to get logits
-        logits_theta = np.array(self.signal([self.target_model], self.handler, self.audit_dataset["data"]))
+        logits_theta = np.array(self.signal([self.target_model], self.handler, self.audit_dataset["data"], *self.ts2vec_params))
         f_logits_theta = f"{self.attack_cache_folder_path}/logits_audit_theta.npy"
         np.save(f_logits_theta, logits_theta)
 
         # run points through shadow models and collect the logits
-        logits_shadow_models = self.signal(self.shadow_models, self.handler, self.audit_dataset["data"])
+        logits_shadow_models = np.array(self.signal(self.shadow_models, self.handler, self.audit_dataset["data"], *self.ts2vec_params))
         f_logits_sm = f"{self.attack_cache_folder_path}/logits_audit_shadow_models.npy"
         np.save(f_logits_sm, logits_shadow_models)
 
@@ -321,11 +336,13 @@ class AttackRMIA(AbstractMIA):
         # STEP 3: Run the attack
         # collect the softmax output of the correct class
         n_audit_points = len(ground_truth_indices)
-        p_x_given_target_model = softmax_logits(logits_theta, self.temperature)[:,np.arange(n_audit_points),ground_truth_indices]
+        #p_x_given_target_model = softmax_logits(logits_theta, self.temperature)[:,np.arange(n_audit_points),ground_truth_indices]
+        p_x_given_target_model = self.transformation(logits_theta[:, np.arange(n_audit_points)])
 
-        # run points through shadow models, colelct logits and compute p(x)
-        sm_shadow_models = [softmax_logits(x, self.temperature) for x in logits_shadow_models]
-        p_x_given_shadow_models = np.array([x[np.arange(n_audit_points),ground_truth_indices] for x in sm_shadow_models])
+        # run points through shadow models, collect logits and compute p(x)
+        #sm_shadow_models = [softmax_logits(x, self.temperature) for x in logits_shadow_models]
+        #p_x_given_shadow_models = np.array([x[np.arange(n_audit_points),ground_truth_indices] for x in sm_shadow_models])
+        p_x_given_shadow_models = self.transformation(logits_shadow_models[:, np.arange(n_audit_points)])
 
         p_x = np.mean(p_x_given_shadow_models, axis=0) if len(self.shadow_models) > 1 else p_x_given_shadow_models.squeeze()
         # compute the ratio of p(x|theta) to p(x)
@@ -340,22 +357,26 @@ class AttackRMIA(AbstractMIA):
 
         # collect the softmax output of the correct class
         n_attack_points = len(self.attack_data_index)
-        p_z_given_target_model = softmax_logits(logits_target_model, self.temperature)[:,np.arange(n_attack_points),z_true_labels]
+        #p_z_given_target_model = softmax_logits(logits_target_model, self.temperature)[:,np.arange(n_attack_points),z_true_labels]
+        p_z_given_target_model = self.transformation(logits_target_model[:, np.arange(n_attack_points)])
 
         # collect the softmax output of the correct class for each shadow model
-        sm_shadow_models = [softmax_logits(x, self.temperature) for x in logits_shadow_models]
-        p_z_given_shadow_models = np.array([x[np.arange(n_attack_points),z_true_labels] for x in sm_shadow_models])
+        #sm_shadow_models = [softmax_logits(x, self.temperature) for x in logits_shadow_models]
+        #p_z_given_shadow_models = np.array([x[np.arange(n_attack_points),z_true_labels] for x in sm_shadow_models])
+        p_z_given_shadow_models = self.transformation(logits_shadow_models[:, np.arange(n_attack_points)])
 
-        # evaluate the marginal p(z) by averaging over the OUT models
-        p_z = np.zeros((n_audit_points, len(self.attack_data_index)))
-        for i in range(n_audit_points):
+        score = np.zeros(n_audit_points)
+        for i in tqdm(range(n_audit_points),
+                      total=n_audit_points,
+                      desc="Processing audit samples"):
+            
+            # evaluate the marginal p(z) by averaging over the OUT models
             model_mask = out_model_indices[:,i]
-            p_z[i] = np.mean(p_z_given_shadow_models[model_mask, :], axis=0)
-        ratio_z = p_z_given_target_model / (p_z + self.epsilon)
+            p_z = np.mean(p_z_given_shadow_models[model_mask, :], axis=0)
+            ratio_z = p_z_given_target_model / (p_z + self.epsilon)
 
-        # for each x, compute the score
-        likelihoods = ratio_x.T / ratio_z
-        score = np.mean(likelihoods > self.gamma, axis=1)
+            likelihood = ratio_x[0, i] / (ratio_z[0] + self.epsilon)
+            score[i] = np.mean(likelihood > self.gamma)
 
         # pick out the in-members and out-members signals
         self.in_member_signals = score[in_members].reshape(-1,1)
@@ -376,12 +397,14 @@ class AttackRMIA(AbstractMIA):
             ground_truth_indices = ground_truth_indices.astype(int)
 
         n_audit_points = len(self.audit_dataset["data"])
-        p_x_given_target_model = softmax_logits(logits_theta, self.temperature)[:,np.arange(n_audit_points),ground_truth_indices]
+        #p_x_given_target_model = softmax_logits(logits_theta, self.temperature)[:,np.arange(n_audit_points),ground_truth_indices]
+        p_x_given_target_model = self.transformation(logits_theta[:, np.arange(n_audit_points)])
 
         # collect the softmax output of the correct class for each shadow model
         # Stack to dimension # models x # data points
-        sm_shadow_models = [softmax_logits(x, self.temperature) for x in logits_shadow_models]
-        p_x_given_shadow_models = np.array([x[np.arange(n_audit_points),ground_truth_indices] for x in sm_shadow_models])
+        #sm_shadow_models = [softmax_logits(x, self.temperature) for x in logits_shadow_models]
+        #p_x_given_shadow_models = np.array([x[np.arange(n_audit_points),ground_truth_indices] for x in sm_shadow_models])
+        p_x_given_shadow_models = self.transformation(logits_shadow_models[:, np.arange(n_audit_points)])
 
         # evaluate the marginal p_out(x) by averaging the output of the shadow models
         p_x_out = np.mean(p_x_given_shadow_models, axis=0) if len(self.shadow_models) > 1 else p_x_given_shadow_models.squeeze()
@@ -393,12 +416,17 @@ class AttackRMIA(AbstractMIA):
         ratio_x = p_x_given_target_model / (p_x + self.epsilon)
 
         # for each x, compare it with the ratio of all z points
-        likelihoods = ratio_x.T / self.ratio_z
+        
+        score = np.zeros(n_audit_points)
+        for i in tqdm(range(n_audit_points),
+                      total=n_audit_points,
+                      desc="Processing audit samples"):
+
+            likelihood = ratio_x[0, i] / (self.ratio_z[0] + self.epsilon)
+            score[i] = np.mean(likelihood > self.gamma)
 
         in_members = self.audit_dataset["in_members"]
         out_members = self.audit_dataset["out_members"]
-
-        score = np.mean(likelihoods > self.gamma, axis=1)
 
         # pick out the in-members and out-members signals
         self.in_member_signals = score[in_members].reshape(-1,1)
@@ -417,6 +445,7 @@ class AttackRMIA(AbstractMIA):
             self._online_attack()
         else:
             self._offline_attack()
+
 
         # set true labels for being in the training dataset
         true_labels = np.concatenate(

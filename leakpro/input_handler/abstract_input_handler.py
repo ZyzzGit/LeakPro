@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 
+import numpy as np
 from torch.nn import Module
 from torch.nn.modules.loss import _Loss
 from torch.optim import Optimizer
@@ -40,7 +41,6 @@ class AbstractInputHandler(ABC):
         dataloader: DataLoader,
         model: Module,
         criterion: _Loss,
-        device: str
     ) -> EvalOutput:
         """Procedure to train a model on data from the population."""
         pass
@@ -64,3 +64,17 @@ class AbstractInputHandler(ABC):
         def __getitem__(self, index:int) -> Any:
             """Return a sample from the dataset."""
             return self.data[index], self.targets[index]
+        
+    def sample_shadow_indices(
+        self, 
+        shadow_population:list, 
+        data_fraction:float
+    ) -> np.ndarray:
+        """
+        Procedure to sample shadow model indices.
+        May be overriden in Handler implementation to perform custom sampling; 
+        see for example sampling by individual in examples/mia/time_series_mia/data_handler.py
+        """
+        data_size = int(len(shadow_population)*data_fraction)
+        data_indices = np.random.choice(shadow_population, data_size, replace=False)
+        return data_indices

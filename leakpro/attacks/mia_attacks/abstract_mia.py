@@ -116,6 +116,7 @@ class AbstractMIA(AbstractAttack):
     def sample_indices_from_population(
         self:Self,
         *,
+        include_aux_indices: bool = True,
         include_train_indices: bool = False,
         include_test_indices: bool = False
     ) -> np.ndarray:
@@ -134,6 +135,12 @@ class AbstractMIA(AbstractAttack):
         all_index = np.arange(AbstractMIA.population_size)
 
         not_allowed_indices = np.array([])
+        if not include_aux_indices:
+            aux_indices = np.arange(AbstractMIA.population_size)
+            aux_indices = np.setdiff1d(aux_indices, self.handler.train_indices)
+            aux_indices = np.setdiff1d(aux_indices, self.handler.test_indices)
+            not_allowed_indices = np.hstack([not_allowed_indices, aux_indices])
+
         if not include_train_indices:
             not_allowed_indices = np.hstack([not_allowed_indices, self.handler.train_indices])
 
@@ -142,6 +149,7 @@ class AbstractMIA(AbstractAttack):
 
         available_index = np.setdiff1d(all_index, not_allowed_indices)
         data_size = len(available_index)
+        assert data_size > 0, "No indices to sample from"
         return np.random.choice(available_index, data_size, replace=False)
 
 
@@ -242,14 +250,20 @@ class AbstractMIA(AbstractAttack):
             if extra is None or "optuna" not in extra:
                 continue
 
-            self.optuna_params += 1 # one more parameter to be optimized
-
             user_provided_value = user_attack_config.get(field_name)
-            # remove the optuna dict to prevent the parameter to get optimized if the user has provided a value
             if user_provided_value is not None:
                 self.configs.model_fields[field_name].json_schema_extra = None
-                self.optuna_params -= 1 # remove one parameter going into optuna
                 logger.info(f"User provided value for {field_name}, it won't be optimized by optuna.")
+                continue
+
+            if self.configs.model_fields[field_name].json_schema_extra["optuna"].get("enabled_if"):
+                if not self.configs.model_fields[field_name].json_schema_extra["optuna"]["enabled_if"](self.configs):
+                    logger.info(f"User has not provided for {field_name}, but field is not enabled and it won't be optimized by optuna.")
+                    continue
+
+            self.optuna_params += 1 # one more parameter to be optimized
+            logger.info(f"User has not provided value for {field_name}, it will be optimized by optuna.")
+
 
     @property
     def population(self:Self)-> List:
