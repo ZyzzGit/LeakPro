@@ -1,4 +1,3 @@
-# Cell
 import numpy as np
 
 import torch as t
@@ -7,6 +6,19 @@ import torch.nn.functional as F
 
 from typing import Tuple
 from functools import partial
+
+"""
+N-HiTS implementation using IdentityBasis block transformations (no support for other basis functions).
+Adapted from https://github.com/cchallu/n-hits
+"""
+
+ACTIVATIONS = ['ReLU',
+               'Softplus',
+               'Tanh',
+               'SELU',
+               'LeakyReLU',
+               'PReLU',
+               'Sigmoid']
 
 
 class RepeatVector(nn.Module):
@@ -20,10 +32,10 @@ class RepeatVector(nn.Module):
         self.repeats = repeats
 
     def forward(self, x):
-        x = x.unsqueeze(-1).repeat(1, 1, self.repeats) # <------------ Mejorar?
+        x = x.unsqueeze(-1).repeat(1, 1, self.repeats)
         return x
 
-# Cell
+
 class _StaticFeaturesEncoder(nn.Module):
     def __init__(self, in_features, out_features):
         super(_StaticFeaturesEncoder, self).__init__()
@@ -35,6 +47,7 @@ class _StaticFeaturesEncoder(nn.Module):
     def forward(self, x):
         x = self.encoder(x)
         return x
+
 
 class _sEncoder(nn.Module):
     def __init__(self, in_features, out_features, n_time_in):
@@ -51,7 +64,7 @@ class _sEncoder(nn.Module):
         x = self.repeat(x) # [N,S_out] -> [N,S_out,T]
         return x
 
-# Cell
+
 class IdentityBasis(nn.Module):
     def __init__(self, backcast_size: int, forecast_size: int, interpolation_mode: str, n_freq_downsample: int):
         super().__init__()
@@ -70,50 +83,20 @@ class IdentityBasis(nn.Module):
         knots = theta[:, :, self.backcast_size:]
 
         if self.interpolation_mode=='nearest':
-            #knots = knots[:,None,:]
             forecast = F.interpolate(knots, size=self.forecast_size, mode=self.interpolation_mode)
-            #forecast = forecast[:,0,:]
         elif self.interpolation_mode=='linear':
-            #knots = knots[:,None,:]
-            forecast = F.interpolate(knots, size=self.forecast_size, mode=self.interpolation_mode) #, align_corners=True)
-            #forecast = forecast[:,0,:]
+            forecast = F.interpolate(knots, size=self.forecast_size, mode=self.interpolation_mode)
         elif 'cubic' in self.interpolation_mode:
             batch_size = int(self.interpolation_mode.split('-')[-1])
             knots = knots[:,None,:,:]
             forecast = t.zeros((len(knots), self.forecast_size)).to(knots.device)
             n_batches = int(np.ceil(len(knots)/batch_size))
             for i in range(n_batches):
-                forecast_i = F.interpolate(knots[i*batch_size:(i+1)*batch_size], size=self.forecast_size, mode='bicubic') #, align_corners=True)
+                forecast_i = F.interpolate(knots[i*batch_size:(i+1)*batch_size], size=self.forecast_size, mode='bicubic')
                 forecast[i*batch_size:(i+1)*batch_size] += forecast_i[:,0,0,:]
 
         return backcast, forecast
 
-# Cell
-def init_weights(module, initialization):
-    if type(module) == t.nn.Linear:
-        if initialization == 'orthogonal':
-            t.nn.init.orthogonal_(module.weight)
-        elif initialization == 'he_uniform':
-            t.nn.init.kaiming_uniform_(module.weight)
-        elif initialization == 'he_normal':
-            t.nn.init.kaiming_normal_(module.weight)
-        elif initialization == 'glorot_uniform':
-            t.nn.init.xavier_uniform_(module.weight)
-        elif initialization == 'glorot_normal':
-            t.nn.init.xavier_normal_(module.weight)
-        elif initialization == 'lecun_normal':
-            pass #t.nn.init.normal_(module.weight, 0.0, std=1/np.sqrt(module.weight.numel()))
-        else:
-            assert 1<0, f'Initialization {initialization} not found'
-
-# Cell
-ACTIVATIONS = ['ReLU',
-               'Softplus',
-               'Tanh',
-               'SELU',
-               'LeakyReLU',
-               'PReLU',
-               'Sigmoid']
 
 class _NHITSBlock(nn.Module):
     """
@@ -178,11 +161,7 @@ class _NHITSBlock(nn.Module):
     def forward(self, insample_y: t.Tensor, insample_x_t: t.Tensor,
                 outsample_x_t: t.Tensor, x_s: t.Tensor) -> Tuple[t.Tensor, t.Tensor]:
 
-        # insample_y = insample_y.unsqueeze(1)
         # Pooling layer to downsample input
-        # insample_y = self.pooling_layer(insample_y)
-        # insample_y = insample_y.squeeze(1)
-
         insample_y = self.pooling_layer(insample_y)
         insample_y = insample_y.view(len(insample_y), -1)
 
@@ -203,7 +182,23 @@ class _NHITSBlock(nn.Module):
         return backcast, forecast
 
 
-# Cell
+def init_weights(module, initialization):
+    if type(module) == t.nn.Linear:
+        if initialization == 'orthogonal':
+            t.nn.init.orthogonal_(module.weight)
+        elif initialization == 'he_uniform':
+            t.nn.init.kaiming_uniform_(module.weight)
+        elif initialization == 'he_normal':
+            t.nn.init.kaiming_normal_(module.weight)
+        elif initialization == 'glorot_uniform':
+            t.nn.init.xavier_uniform_(module.weight)
+        elif initialization == 'glorot_normal':
+            t.nn.init.xavier_normal_(module.weight)
+        elif initialization == 'lecun_normal':
+            pass #t.nn.init.normal_(module.weight, 0.0, std=1/np.sqrt(module.weight.numel()))
+        else:
+            assert 1<0, f'Initialization {initialization} not found'
+
 class NHiTS(nn.Module):
     """
     N-HiTS Model.
@@ -286,7 +281,6 @@ class NHiTS(nn.Module):
 
         block_list = []
         for i in range(len(stack_types)):
-            #print(f'| --  Stack {stack_types[i]} (#{i})')
             for block_id in range(n_blocks[i]):
 
                 # Batch norm only on first block
@@ -328,27 +322,18 @@ class NHiTS(nn.Module):
                 # Select type of evaluation and apply it to all layers of block
                 init_function = partial(init_weights, initialization=initialization)
                 nbeats_block.layers.apply(init_function)
-                #print(f'     | -- {nbeats_block}')
                 block_list.append(nbeats_block)
         return block_list
 
     def forward(self, x):
 
         # insample
-        #insample_y    = Y[:, :-self.n_time_out]
-        #insample_x_t  = X[:, :, :-self.n_time_out]
-        #insample_mask = insample_mask[:, :-self.n_time_out]
         x = x.swapaxes(1,2).contiguous()
-
         insample_y    = x
         insample_x_t  = t.Tensor()
         insample_mask = t.ones((x.size(0), x.size(2)), device=x.device)
 
-
         # outsample
-        #outsample_y   = Y[:, -self.n_time_out:]
-        #outsample_x_t = X[:, :, -self.n_time_out:]
-        #outsample_mask = outsample_mask[:, -self.n_time_out:]
         outsample_x_t = t.Tensor()
 
         forecast = self.forecast(insample_y=insample_y,
@@ -366,7 +351,6 @@ class NHiTS(nn.Module):
         insample_mask = insample_mask.flip(dims=(-1,))
         insample_mask = insample_mask[:,None,:]
 
-        # forecast = insample_y[:, -1:] # Level with Naive1
         forecast = insample_y[:, :, -1:] # Level with Naive1
         for i, block in enumerate(self.blocks):
             backcast, block_forecast = block(insample_y=residuals, insample_x_t=insample_x_t,
