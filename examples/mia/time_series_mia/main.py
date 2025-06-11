@@ -1,4 +1,4 @@
-import os, sys, yaml, numpy as np, matplotlib.pyplot as plt, torch, pandas as pd
+import os, sys, yaml, torch, pandas as pd
 
 project_root = os.path.abspath(os.path.join(os.getcwd(), "../../.."))
 sys.path.append(project_root)
@@ -11,8 +11,6 @@ from examples.mia.time_series_mia.utils.models.LSTM import LSTM
 from examples.mia.time_series_mia.utils.models.TCN import TCN
 from examples.mia.time_series_mia.utils.models.DLinear import DLinear
 from examples.mia.time_series_mia.utils.models.NBeats import NBeats
-from examples.mia.time_series_mia.utils.models.WaveNet import WaveNet
-from examples.mia.time_series_mia.utils.models.Bromick import Bromick
 from examples.mia.time_series_mia.utils.models.NHiTS import NHiTS
 
 from data_handler import IndividualizedInputHandler
@@ -94,12 +92,8 @@ if __name__ == "__main__":
         model = DLinear(input_dim, lookback, horizon)
     elif model_name == "NBeats":
         model = NBeats(input_dim, lookback, horizon)
-    elif model_name == "WaveNet":
-        model = WaveNet(input_dim, horizon)
     elif model_name == "NHiTS":
         model = NHiTS(input_dim, lookback, horizon)
-    elif model_name == "Bromick" or model_name == "Bhowmick":
-        model = Bromick(input_dim, horizon)
     else:
         raise NotImplementedError()
 
