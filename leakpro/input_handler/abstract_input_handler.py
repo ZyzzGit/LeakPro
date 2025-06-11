@@ -72,7 +72,7 @@ class AbstractInputHandler(ABC):
     ) -> np.ndarray:
         """
         Procedure to sample shadow model indices.
-        May be overriden in Handler implementation to perform custom sampling; 
+        May be overridden in Handler implementation to perform custom sampling; 
         see for example sampling by individual in examples/mia/time_series_mia/data_handler.py
         """
         data_size = int(len(shadow_population)*data_fraction)
