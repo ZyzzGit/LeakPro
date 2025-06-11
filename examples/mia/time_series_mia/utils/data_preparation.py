@@ -45,6 +45,7 @@ def read_mat_data(path, file):
     file_path = os.path.join(path, file)
     return loadmat(file_path)['val'].T  # transpose to get shape (#timesteps, #variables)
 
+# TODO: 1. Add support for num_timesteps trucation. 2. Curl from kaggle if data unavailable
 def get_ECG_dataset(path, num_individuals, k_lead=12, **kwargs):
     """Get the ECG dataset."""
 
@@ -71,6 +72,8 @@ def get_edf_time_series(edf_data, k_lead, num_time_steps, num_initial_time_steps
 
     return time_series[start:end, :k_lead]  # select first num_timesteps of the k first variables after cutting the first num_initial_time_steps_to_cut
 
+
+# TODO: Add exception with instructions if data not available
 def get_EEG_dataset(path, num_individuals, k_lead=3, num_time_steps=30000, **kwargs):
     """Get the EEG dataset. Assuming subjects are placed in data/EEG with subfolders '000', '001', etc (as original structure).
         num_time_steps is the fixed number of steps to use from each individual; cutting the longer series and ignoring shorter ones
@@ -123,6 +126,7 @@ def get_EEG_dataset(path, num_individuals, k_lead=3, num_time_steps=30000, **kwa
     return trimmed_selected_time_series
 
 
+# TODO: Curl if data unavailable
 def get_ELD_dataset(path, num_individuals, num_time_steps, **kwargs):
     """Get the ELD dataset."""
 
@@ -167,64 +171,6 @@ def get_ELD_dataset(path, num_individuals, num_time_steps, **kwargs):
     return data
 
 
-def get_LCL_dataset(path, num_individuals, **kwargs):
-    """Get the LCL dataset."""
-        
-    df = pd.read_csv(os.path.join(path, "LCL", "daily_dataset.csv"))
-    individuals = list(df["LCLid"].value_counts(sort=True, ascending=False)[:num_individuals].index)
-    assert len(individuals) == num_individuals
-
-    load_data = []
-    time_data = []
-
-    for indiv in individuals:
-        indiv_df = df[df["LCLid"] == indiv]
-        load = indiv_df["energy_mean"]
-        time = indiv_df["day"]
-
-        # Convert float32 and np.datetimes
-        load = np.array(load, dtype=np.float32)
-        time = np.array(time, dtype=np.datetime64)
-
-        # Remove duplicates and replace by mean of the duplicates
-        unique_time, _ = np.unique(time, return_index=True)
-        avg_load = np.zeros_like(unique_time, dtype=np.float32)
-        for i, t in enumerate(unique_time):
-            mask = time == t
-            avg_load[i] = np.mean(load[mask])  # Take average of duplicates
-        time = unique_time
-        load = avg_load
-
-        # Generate the expected time range (30-minute intervals)
-        start, end = time[0], time[-1]
-        expected_time = np.arange(start, end + np.timedelta64(1, 'D'), np.timedelta64(1, 'D'))
-
-        # Fill missing timestamps with NaN
-        filled_load = np.full_like(expected_time, np.nan, dtype=np.float32)
-        filled_load[np.isin(expected_time, time)] = load
-
-        time = expected_time
-        load = filled_load
-
-        # Interpolate missing values linearly
-        nan_mask = np.isnan(load)
-        load[nan_mask] = np.interp(
-            np.flatnonzero(nan_mask),
-            np.flatnonzero(~nan_mask),
-            load[~nan_mask]
-        )
-
-        load_data.append(load)
-        time_data.append(time)
-
-    seq_len = min(len(ts) for ts in load_data)
-    time_data = [ts[:seq_len] for ts in time_data]
-    load_data = [ts[:seq_len] for ts in load_data]
-    time_data = np.expand_dims(np.array(time_data), -1)
-    load_data = np.expand_dims(np.array(load_data), -1)
-    return load_data
-
-
 def dataset_matches_params(dataset_name, dataset, lookback, horizon, num_individuals, stride, scaling, val_fraction, **kwargs):
     """Check if a saved dataset matches the given parameters."""
     
@@ -235,16 +181,13 @@ def dataset_matches_params(dataset_name, dataset, lookback, horizon, num_individ
     num_time_steps = kwargs.get("num_time_steps", None)
     k_lead = kwargs.get("k_lead", None)
 
-    if k_lead is None or dataset_name in ["ELD", "LCL"]:    # note: ELD and LCL are univariate    
+    if k_lead is None or dataset_name == "ELD":    # note: ELD is univariate    
         matching_num_variables = True
     else:
         matching_num_variables = dataset.num_variables == k_lead
 
-    if num_time_steps is None or dataset_name != "EEG": # note: only EEG needs this since it truncates series
-        matching_num_time_steps = True 
-    else:
-        expected_num_time_steps = num_time_steps - lookback - horizon + 1
-        matching_num_time_steps = (len(dataset) // dataset.num_individuals) == expected_num_time_steps
+    expected_num_time_steps = num_time_steps - lookback - horizon + 1
+    matching_num_time_steps = (len(dataset) // dataset.num_individuals) == expected_num_time_steps
 
     if scaling.lower() == "none":
         matching_scaler = dataset.scaler.__class__.__name__ == "FunctionTransformer"
@@ -279,9 +222,9 @@ def preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, s
 
     # Load dataset if already exists on path
     dataset = None
-    #if os.path.exists(f"{path}/{dataset_name}.pkl"):
-    #    with open(f"{path}/{dataset_name}.pkl", "rb") as f:
-    #        dataset = joblib.load(f)
+    if os.path.exists(f"{path}/{dataset_name}.pkl"):
+        with open(f"{path}/{dataset_name}.pkl", "rb") as f:
+            dataset = joblib.load(f)
 
     # If all parameters matches, we're done; return it
     if dataset_matches_params(dataset_name, dataset, lookback, horizon, num_individuals, stride, scaling, val_fraction, **kwargs):
@@ -293,8 +236,6 @@ def preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, s
         raw_data = get_ECG_dataset(path, num_individuals, **kwargs)
     elif dataset_name == "EEG":
         raw_data = get_EEG_dataset(path, num_individuals, **kwargs)
-    elif dataset_name == "LCL":
-        raw_data = get_LCL_dataset(path, num_individuals, **kwargs)
     elif dataset_name == "ELD":
         raw_data = get_ELD_dataset(path, num_individuals, **kwargs)
     else:
