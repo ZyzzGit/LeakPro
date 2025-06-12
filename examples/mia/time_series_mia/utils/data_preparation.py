@@ -1,4 +1,5 @@
-import os, pickle, joblib, torch, random, numpy as np, pandas as pd
+import os, pickle, joblib, torch, random, zipfile, urllib.request
+import numpy as np, pandas as pd
 
 from scipy.io import loadmat
 from sklearn.preprocessing import RobustScaler, MinMaxScaler, StandardScaler, FunctionTransformer
@@ -143,11 +144,40 @@ def get_EEG_dataset(path, num_individuals, k_lead=3, num_time_steps=30000, **kwa
     return trimmed_selected_time_series
 
 
-# TODO: Curl if data unavailable
+def download_ELD(save_dir):
+    """Download the ELD Dataset if it's not present."""
+
+    url = "https://archive.ics.uci.edu/static/public/321/electricityloaddiagrams20112014.zip"
+    os.makedirs(save_dir, exist_ok=True)
+
+    zip_path = os.path.join(save_dir, "electricityloaddiagrams20112014.zip")
+    target_file = "LD2011_2014.txt"
+
+    # Download ZIP
+    print(f"Downloading ELD data to {zip_path}...")
+    urllib.request.urlretrieve(url, zip_path)
+
+    # Extract the target txt file
+    print(f"Extracting {target_file} from zip...")
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        if target_file in zip_ref.namelist():
+            zip_ref.extract(member=target_file, path=save_dir)
+        else:
+            raise FileNotFoundError(f"'{target_file}' not found in {zip_path}.")
+
+    # Remove ZIP file
+    os.remove(zip_path)
+    print(f"Removed the ZIP file.")
+
 def get_ELD_dataset(path, num_individuals, num_time_steps, **kwargs):
     """Get the ELD dataset."""
 
-    df = pd.read_csv(os.path.join(path, "ELD", "LD2011_2014.txt"), delimiter=";", decimal=",")
+    data_path = os.path.join(path, "ELD")
+    if not os.path.exists(data_path) or not os.path.exists(os.path.join(data_path, "LD2011_2014.txt")):
+        download_ELD(data_path)
+
+    df = pd.read_csv(os.path.join(data_path, "LD2011_2014.txt"), delimiter=";", decimal=",")
+
     # Set a name for date column
     df.rename(columns={df.columns[0]: "Date"}, inplace=True)
     df["Date"] = pd.to_datetime(df["Date"], utc=True)
@@ -310,7 +340,7 @@ def preprocess_dataset(dataset_name, path, lookback, horizon, num_individuals, s
     dataset = IndividualizedDataset(x, y, individual_indices, scaler, stride, val_set, len(val_individuals))
     with open(f"{path}/{dataset_name}.pkl", "wb") as file:
         pickle.dump(dataset, file)
-        print(f"Save data to {path}/{dataset_name}.pkl") 
+        print(f"Saved dataset to {path}/{dataset_name}.pkl") 
 
     return dataset
 
