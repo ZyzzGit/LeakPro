@@ -87,7 +87,6 @@ def get_edf_time_series(edf_data, k_lead, num_time_steps, num_initial_time_steps
 
     return time_series[start:end, :k_lead]  # select first num_timesteps of the k first variables after cutting the first num_initial_time_steps_to_cut
 
-# TODO: Add exception with instructions if data not available
 def get_EEG_dataset(path, num_individuals, k_lead=3, num_time_steps=30000, **kwargs):
     """Get the EEG dataset. Assuming subjects are placed in data/EEG with subfolders '000', '001', etc (as original structure).
         num_time_steps is the fixed number of steps to use from each individual; cutting the longer series and ignoring shorter ones
@@ -104,6 +103,10 @@ def get_EEG_dataset(path, num_individuals, k_lead=3, num_time_steps=30000, **kwa
     min_n_times = num_time_steps + num_initial_time_steps_to_cut
 
     data_path = os.path.join(path, 'EEG')
+    if not os.path.exists(data_path):
+        msg = f"Please request access and download the TUH-EEG Corpus from https://isip.piconepress.com/projects/nedc/html/tuh_eeg/, then save subfolders ('000', '001', etc) to {path}/EEG."
+        raise FileNotFoundError(msg)
+
     subjects = []
     for subdir in os.listdir(data_path):
         for subject in os.listdir(os.path.join(data_path, subdir)):
