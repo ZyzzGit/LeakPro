@@ -14,6 +14,7 @@ from leakpro.utils.save_load import hash_model
 from leakpro.utils.logger import logger
 from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
 from leakpro.signals.signal_extractor import Model
+from leakpro.signals.utils.get_TS2Vec import get_ts2vec_model
 from leakpro.utils.import_helper import List, Optional, Self, Tuple
 
 class Signal(ABC):
@@ -468,7 +469,6 @@ class TS2Vec(Signal):
             The signal value.
 
         """
-        from leakpro.signals.utils.get_TS2Vec import get_ts2vec_model
         # Get represenation model
         batch_size = handler.get_dataloader(indices, shuffle=False).batch_size
         ts2vec_model = get_ts2vec_model(handler, shadow_population_indices, batch_size)
