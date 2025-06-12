@@ -11,7 +11,7 @@ from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.mia_handler import MIAHandler
 from leakpro.reporting.mia_result import MIAResult
-from leakpro.signals.signal import get_signal_from_name
+from leakpro.signals.signal import create_signal_instance
 from leakpro.utils.import_helper import Self
 from leakpro.utils.logger import logger
 
@@ -72,7 +72,7 @@ class AttackMSLiRA(AbstractMIA):
                     There is no data left for the shadow models.")
 
         self.shadow_models = []
-        self.signals = [get_signal_from_name(signal_name) for signal_name in self.signal_names]
+        self.signals = [create_signal_instance(signal_name) for signal_name in self.signal_names]
 
     def description(self:Self) -> dict:
         """Return a description of the attack."""

@@ -12,27 +12,9 @@ from tqdm import tqdm
 from leakpro.utils.save_load import hash_model
 
 from leakpro.utils.logger import logger
-from leakpro.signals.utils.get_TS2Vec import get_ts2vec_model
-from leakpro.signals.utils.msm import mv_msm_distance
 from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
 from leakpro.signals.signal_extractor import Model
 from leakpro.utils.import_helper import List, Optional, Self, Tuple
-from sktime.distances import dtw_distance
-
-def get_signal_from_name(signal_name):
-    return {
-        "ModelLogits": ModelLogits,
-        "ModelRescaledLogits": ModelRescaledLogits,
-        "ModelLoss": ModelLoss,
-        "HopSkipJumpDistance": HopSkipJumpDistance,
-        "SeasonalityLoss": SeasonalityLoss,
-        "TrendLoss": TrendLoss,
-        "MSELoss": MSELoss,
-        "TS2VecLoss": TS2VecLoss,
-        "SMAPELoss": SMAPELoss,
-        "RescaledSMAPELoss": RescaledSMAPELoss,
-        "MAELoss": MAELoss,
-    }[signal_name]()
 
 class Signal(ABC):
     """Abstract class, representing any type of signal that can be obtained from a Model and/or a Dataset."""
@@ -71,24 +53,15 @@ class Signal(ABC):
         handler: AbstractInputHandler,
         indices: np.ndarray,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        model_hash = hash_model(model.model_obj)
-        output_dir = handler.configs.audit.output_dir
-        os.makedirs(os.path.join(output_dir, "pred_cache"), exist_ok=True)
-        output_path = os.path.join(output_dir, "pred_cache", model_hash + ".npy")
-        if os.path.isfile(output_path):
-            return np.load(output_path)[indices], np.array(handler.population.targets)[indices]
-        else:
-            data_loader = handler.get_dataloader(np.arange(handler.population_size), shuffle=False)
-            assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
-            model_logits = []
-            for data, _ in data_loader:
-                # Get logits for each data point
-                logits = model.get_logits(data)
-                model_logits.extend(logits)
-            model_logits = np.array(model_logits)
-            np.save(output_path, model_logits)
-            return model_logits[indices], np.array(handler.population.targets)[indices]
-
+        data_loader = handler.get_dataloader(indices, shuffle=False)
+        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
+        model_logits = []
+        for data, _ in data_loader:
+            # Get logits for each data point
+            logits = model.get_logits(data)
+            model_logits.extend(logits)
+        model_logits = np.array(model_logits)
+        return model_logits, np.array(handler.population.targets)[indices]
 
 class ModelLogits(Signal):
     """Inherits from the Signal class, used to represent any type of signal that can be obtained from a Model and/or a Dataset.
@@ -282,13 +255,7 @@ def get_seasonality_coefficients(Y):
     C = fft(Z, axis=1) # row-wise 1D-DFT over horizon
     return C
 
-class SeasonalityLoss(Signal):
-    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
-
-    This particular class is used to get the seasonality loss of a time-series model output.
-    We define this as the distance (L2 norm) between the true and predicted values for the seasonality component.
-    """
-
+class Seasonality(Signal):
     def __call__(
         self:Self,
         models: List[Model],
@@ -302,7 +269,6 @@ class SeasonalityLoss(Signal):
             models: List of models that can be queried.
             handler: The input handler object.
             indices: List of indices in population dataset that can be queried from handler.
-            batch_size: Integer to determine batch size for dataloader.
 
         Returns:
         -------
@@ -311,7 +277,7 @@ class SeasonalityLoss(Signal):
         """
         
         results = []
-        for model in tqdm(models, desc="Getting Seasonality loss"):
+        for model in tqdm(models, desc="Getting Seasonality signal"):
             model_outputs, model_targets = self.get_model_output(model, handler, indices)
 
             seasonality_pred = get_seasonality_coefficients(model_outputs)
@@ -327,13 +293,7 @@ def get_trend_coefficients(Y, polynomial_degree=4):
     A = inv(P.T @ P) @ P.T @ Y                              # least squares solution to polynomial fit
     return A
     
-class TrendLoss(Signal):
-    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
-
-    This particular class is used to get the trend loss of a time-series model output.
-    We define this as the distance (L2 norm) between the true and predicted values for the trend component.
-    """
-
+class Trend(Signal):
     def __call__(
         self:Self,
         models: List[Model],
@@ -347,7 +307,6 @@ class TrendLoss(Signal):
             models: List of models that can be queried.
             handler: The input handler object.
             indices: List of indices in population dataset that can be queried from handler.
-            batch_size: Integer to determine batch size for dataloader.
 
         Returns:
         -------
@@ -355,7 +314,7 @@ class TrendLoss(Signal):
 
         """
         results = []
-        for model in tqdm(models, desc="Getting Trend loss"):
+        for model in tqdm(models, desc="Getting Trend"):
             model_outputs, model_targets = self.get_model_output(model, handler, indices)
 
             trend_pred = get_trend_coefficients(model_outputs)
@@ -364,12 +323,35 @@ class TrendLoss(Signal):
             results.append(trend_loss)
         return np.array(results)
 
-class MSELoss(Signal):
-    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+class MSE(Signal):
+    def __call__(
+        self:Self,
+        models: List[Model],
+        handler: AbstractInputHandler,
+        indices: np.ndarray,
+    ) -> List[np.ndarray]:
+        """Built-in call method.
 
-    This particular class is used to get the per-sample MSE loss of a time-series model output.
-    """
+        Args:
+        ----
+            models: List of models that can be queried.
+            handler: The input handler object.
+            indices: List of indices in population dataset that can be queried from handler.
 
+        Returns:
+        -------
+            The signal value.
+
+        """
+
+        results = []
+        for model in tqdm(models, desc="Getting MSE"):
+            model_outputs, model_targets = self.get_model_output(model, handler, indices)
+            model_mse_loss = np.mean(np.square(model_outputs - model_targets), axis=(1,2))
+            results.append(model_mse_loss)
+        return np.array(results)
+
+class MAE(Signal):
     def __call__(
         self:Self,
         models: List[Model],
@@ -390,21 +372,82 @@ class MSELoss(Signal):
             The signal value.
 
         """
+        results = []
+        for model in tqdm(models, desc="Getting MAE signal"):
+            model_outputs, model_targets = self.get_model_output(model, handler, indices)
+            model_mae_loss = np.mean(np.abs(model_outputs - model_targets), axis=(1,2))
+            results.append(model_mae_loss)
+        return np.array(results)
+
+class SMAPE(Signal):
+    def __call__(
+        self:Self,
+        models: List[Model],
+        handler: AbstractInputHandler,
+        indices: np.ndarray,
+    ) -> List[np.ndarray]:
+        """Built-in call method.
+
+        Args:
+        ----
+            models: List of models that can be queried.
+            handler: The input handler object.
+            indices: List of indices in population dataset that can be queried from handler.
+
+        Returns:
+        -------
+            The signal value.
+
+        """
 
         results = []
-        for model in tqdm(models, desc="Getting MSE loss"):
+        for model in tqdm(models, desc="Getting SMAPE signal"):
             model_outputs, model_targets = self.get_model_output(model, handler, indices)
-            model_mse_loss = np.mean(np.square(model_outputs - model_targets), axis=(1,2))
-            results.append(model_mse_loss)
+            
+            numerator = np.abs(model_outputs - model_targets) 
+            denominator = np.abs(model_outputs) + np.abs(model_targets) + 1e-30
+            fraction = numerator / denominator
+            smape_loss = np.mean(fraction, axis=(1,2))
+
+            results.append(smape_loss)
         return np.array(results)
+
     
-class TS2VecLoss(Signal):
-    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+class RescaledSMAPE(Signal):
+    def __call__(
+        self:Self,
+        models: List[Model],
+        handler: AbstractInputHandler,
+        indices: np.ndarray,
+    ) -> List[np.ndarray]:
+        """Built-in call method.
 
-    This particular class is used to get the TS2Vec loss of a time-series model output.
-    We define this as the distance (L2 norm) between the TS2Vec representations of the true and predicted values.
-    """
+        Args:
+        ----
+            models: List of models that can be queried.
+            handler: The input handler object.
+            indices: List of indices in population dataset that can be queried from handler.
 
+        Returns:
+        -------
+            The signal value.
+
+        """
+
+        results = []
+        for model in tqdm(models, desc="Getting Rescaled SMAPE signal"):
+            model_outputs, model_targets = self.get_model_output(model, handler, indices)
+            
+            numerator = np.abs(model_outputs - model_targets) 
+            denominator = np.abs(model_outputs) + np.abs(model_targets) + 1e-30
+            fraction = numerator / denominator
+            smape_loss = np.mean(fraction, axis=(1,2))
+            rescaled_smape = np.log(smape_loss / (1 - smape_loss + 1e-30))
+
+            results.append(rescaled_smape)
+        return np.array(results)
+
+class TS2Vec(Signal):
     def __call__(
         self:Self,
         models: List[Model],
@@ -419,13 +462,13 @@ class TS2VecLoss(Signal):
             models: List of models that can be queried.
             handler: The input handler object.
             indices: List of indices in population dataset that can be queried from handler.
-            batch_size: Integer to determine batch size for dataloader.
 
         Returns:
         -------
             The signal value.
 
         """
+        from leakpro.signals.utils.get_TS2Vec import get_ts2vec_model
         # Get represenation model
         batch_size = handler.get_dataloader(indices, shuffle=False).batch_size
         ts2vec_model = get_ts2vec_model(handler, shadow_population_indices, batch_size)
@@ -442,208 +485,25 @@ class TS2VecLoss(Signal):
             results.append(ts2vec_loss)
 
         return results
-    
-class DTWDistance(Signal):
-    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
 
-    This particular class is used to get the Dynamic Time Warping distance between a time-series model output and the target series.
-    """
+SIGNAL_REGISTRY = {
+    "ModelLogits": ModelLogits,
+    "ModelRescaledLogits": ModelRescaledLogits,
+    "ModelLoss": ModelLoss,
+    "HopSkipJumpDistance": HopSkipJumpDistance,
+    "Seasonality": Seasonality,
+    "Trend": Trend,
+    "MSE": MSE,
+    "MAE": MAE,
+    "SMAPE": SMAPE,
+    "RescaledSMAPE": RescaledSMAPE,
+    "TS2Vec": TS2Vec,
+}
 
-    def __call__(
-        self:Self,
-        models: List[Model],
-        handler: AbstractInputHandler,
-        indices: np.ndarray,
-    ) -> List[np.ndarray]:
-        """Built-in call method.
-
-        Args:
-        ----
-            models: List of models that can be queried.
-            handler: The input handler object.
-            indices: List of indices in population dataset that can be queried from handler.
-            batch_size: Integer to determine batch size for dataloader.
-
-        Returns:
-        -------
-            The signal value.
-
-        """
-        # Compute the signal for each model
-        data_loader = handler.get_dataloader(indices, shuffle=False)
-        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
-
-        results = []
-        for m, model in enumerate(models):
-            # Initialize a matrix to store the DTW distances for the current model
-            model_dtw_distance = []
-
-            for data, target in tqdm(data_loader, desc=f"Getting DTW distance for model {m+1}/ {len(models)}"):
-                # Get the DTW distances for batch
-                output = model.get_logits(data)
-                batch_dtw_distances = np.array(list(map(dtw_distance, target.numpy(), output)))
-                model_dtw_distance.extend(batch_dtw_distances)
-
-            model_dtw_distance = np.array(model_dtw_distance)
-            results.append(model_dtw_distance)
-
-        return results
-    
-class MSMDistance(Signal):
-    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
-
-    This particular class is used to get the Move-Split-Merge distance between a time-series model output and the target series.
-    """
-
-    def __call__(
-        self:Self,
-        models: List[Model],
-        handler: AbstractInputHandler,
-        indices: np.ndarray,
-    ) -> List[np.ndarray]:
-        """Built-in call method.
-
-        Args:
-        ----
-            models: List of models that can be queried.
-            handler: The input handler object.
-            indices: List of indices in population dataset that can be queried from handler.
-            batch_size: Integer to determine batch size for dataloader.
-
-        Returns:
-        -------
-            The signal value.
-
-        """
-        # Compute the signal for each model
-        data_loader = handler.get_dataloader(indices, shuffle=False)
-        assert self._is_shuffling(data_loader) is False, "DataLoader must not shuffle data to maintain order of indices"
-
-        results = []
-        for m, model in enumerate(models):
-            # Initialize a matrix to store the MSM distances for the current model
-            model_msm_distance = []
-
-            for data, target in tqdm(data_loader, desc=f"Getting MSM distance for model {m+1}/ {len(models)}"):
-                # Get the MSM distances for batch
-                output = model.get_logits(data)
-                batch_msm_distances = np.array(list(map(mv_msm_distance, target.numpy(), output)))
-                model_msm_distance.extend(batch_msm_distances)
-
-            model_msm_distance = np.array(model_msm_distance)
-            results.append(model_msm_distance)
-
-        return results
-
-class SMAPELoss(Signal):
-    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
-
-    This particular class is used to get the per-sample MASE loss of a time-series model output.
-    """
-
-    def __call__(
-        self:Self,
-        models: List[Model],
-        handler: AbstractInputHandler,
-        indices: np.ndarray,
-    ) -> List[np.ndarray]:
-        """Built-in call method.
-
-        Args:
-        ----
-            models: List of models that can be queried.
-            handler: The input handler object.
-            indices: List of indices in population dataset that can be queried from handler.
-            batch_size: Integer to determine batch size for dataloader.
-
-        Returns:
-        -------
-            The signal value.
-
-        """
-
-        results = []
-        for model in tqdm(models, desc="Getting SMAPE loss"):
-            model_outputs, model_targets = self.get_model_output(model, handler, indices)
-            
-            numerator = np.abs(model_outputs - model_targets) 
-            denominator = np.abs(model_outputs) + np.abs(model_targets) + 1e-30
-            fraction = numerator / denominator
-            smape_loss = np.mean(fraction, axis=(1,2))
-
-            results.append(smape_loss)
-        return np.array(results)
-
-    
-class RescaledSMAPELoss(Signal):
-    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
-
-    This particular class is used to get the per-sample MASE loss of a time-series model output.
-    """
-
-    def __call__(
-        self:Self,
-        models: List[Model],
-        handler: AbstractInputHandler,
-        indices: np.ndarray,
-    ) -> List[np.ndarray]:
-        """Built-in call method.
-
-        Args:
-        ----
-            models: List of models that can be queried.
-            handler: The input handler object.
-            indices: List of indices in population dataset that can be queried from handler.
-            batch_size: Integer to determine batch size for dataloader.
-
-        Returns:
-        -------
-            The signal value.
-
-        """
-
-        results = []
-        for model in tqdm(models, desc="Getting Rescaled SMAPE loss"):
-            model_outputs, model_targets = self.get_model_output(model, handler, indices)
-            
-            numerator = np.abs(model_outputs - model_targets) 
-            denominator = np.abs(model_outputs) + np.abs(model_targets) + 1e-30
-            fraction = numerator / denominator
-            smape_loss = np.mean(fraction, axis=(1,2))
-            rescaled_smape = np.log(smape_loss / (1 - smape_loss + 1e-30))
-
-            results.append(rescaled_smape)
-        return np.array(results)
-    
-class MAELoss(Signal):
-    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
-
-    This particular class is used to get the per-sample MAE loss of a time-series model output.
-    """
-
-    def __call__(
-        self:Self,
-        models: List[Model],
-        handler: AbstractInputHandler,
-        indices: np.ndarray,
-    ) -> List[np.ndarray]:
-        """Built-in call method.
-
-        Args:
-        ----
-            models: List of models that can be queried.
-            handler: The input handler object.
-            indices: List of indices in population dataset that can be queried from handler.
-            batch_size: Integer to determine batch size for dataloader.
-
-        Returns:
-        -------
-            The signal value.
-
-        """
-        results = []
-        for model in tqdm(models, desc="Getting MAE loss"):
-            model_outputs, model_targets = self.get_model_output(model, handler, indices)
-            model_mae_loss = np.mean(np.abs(model_outputs - model_targets), axis=(1,2))
-            results.append(model_mae_loss)
-        return np.array(results)
+def create_signal_instance(signal_name: str) -> Signal:
+    """Instantiate and return the signal object corresponding to the given name."""
+    try:
+        signal_cls = SIGNAL_REGISTRY[signal_name]
+    except KeyError as e:
+        raise ValueError(f"Unknown signal name: '{signal_name}'") from e
+    return signal_cls()

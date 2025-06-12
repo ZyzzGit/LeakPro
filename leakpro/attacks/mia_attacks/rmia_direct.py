@@ -12,7 +12,7 @@ from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.attacks.utils.utils import softmax_logits
 from leakpro.input_handler.mia_handler import MIAHandler
 from leakpro.reporting.mia_result import MIAResult
-from leakpro.signals.signal import get_signal_from_name
+from leakpro.signals.signal import create_signal_instance
 from leakpro.utils.import_helper import Self, Tuple
 from leakpro.utils.logger import logger
 
@@ -72,7 +72,7 @@ class AttackRMIADirect(AbstractMIA):
             raise ValueError("Only online RMIA-Direct is defined.")
 
         self.shadow_models = []
-        self.signal = get_signal_from_name(self.signal_name)
+        self.signal = create_signal_instance(self.signal_name)
         self.epsilon = 1e-6
         self.shadow_models = None
         self.shadow_model_indices = None
