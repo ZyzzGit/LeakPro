@@ -45,25 +45,40 @@ def read_mat_data(path, file):
     file_path = os.path.join(path, file)
     return loadmat(file_path)['val'].T  # transpose to get shape (#timesteps, #variables)
 
-# TODO: 1. Add support for num_timesteps trucation. 2. Curl from kaggle if data unavailable
-def get_ECG_dataset(path, num_individuals, k_lead=12, **kwargs):
-    """Get the ECG dataset."""
+def get_ECG_dataset(path, num_individuals, k_lead=12, num_time_steps=5000, **kwargs):
+    """Get the Georgia 12-Lead ECG dataset."""
 
-    timesteps = 5000   # number of timesteps in raw time series
     raw_data_path = os.path.join(path, 'ECG')
-    individual_files = random.sample(os.listdir(raw_data_path), num_individuals)
-    all_raw_time_series = np.array(list(filter(
-        lambda ts: ts.shape[0] == timesteps, # keep time series with 5000 timesteps (only 52/10344 individuals don't satisfy this) 
-        map(lambda f: read_mat_data(raw_data_path, f), individual_files) 
-    )))
-    all_raw_time_series = all_raw_time_series[..., :k_lead]
+    if not os.path.exists(raw_data_path):
+        msg = f"Please download the Georgia 12-Lead ECG dataset from https://www.kaggle.com/datasets/bjoernjostein/georgia-12lead-ecg-challenge-database and save .mat files to {path}/ECG."
+        raise FileNotFoundError(msg)
+    
+    max_num_time_steps = 5000    # Dataset contains 10292 time series of length 5000, and 52 of length 2500
+    if num_time_steps > max_num_time_steps:
+        raise ValueError("num_time_steps cannot exceed 5000 for the ECG dataset")
 
-    return all_raw_time_series
+    valid_files = [file for file in os.listdir(raw_data_path) if file.endswith('.mat')] 
+    random.shuffle(valid_files) # ensure random selection order
+
+    selected_time_series = []
+    for file in valid_files:
+        time_series = read_mat_data(raw_data_path, file)
+        if len(time_series) >= num_time_steps:
+            selected_time_series.append(time_series[:num_time_steps, :k_lead])  # randomly select time series of adequate length, then truncate to specified length and variables
+
+        # Stop when the desired number of individuals is reached
+        if len(selected_time_series) == num_individuals:
+            break
+        
+    if len(selected_time_series) < num_individuals:
+        logger.warning(f"num_individuals = {num_individuals} but only found {len(selected_time_series)} with num_time_steps >= {num_time_steps}. Proceeding with {len(selected_time_series)} individuals.")
+
+    return np.array(selected_time_series)
 
 
 def get_edf_time_series(edf_data, k_lead, num_time_steps, num_initial_time_steps_to_cut):
     time_series = edf_data.get_data()
-    time_series = time_series.T # transpose to get sample dimension first
+    time_series = time_series.T # transpose to get time dimension first
     
     start = num_initial_time_steps_to_cut
     end = start + num_time_steps
@@ -71,7 +86,6 @@ def get_edf_time_series(edf_data, k_lead, num_time_steps, num_initial_time_steps
         raise ValueError(f"Tried to sample steps [{start}, {end}) from time series of length {time_series.shape[0]}.")
 
     return time_series[start:end, :k_lead]  # select first num_timesteps of the k first variables after cutting the first num_initial_time_steps_to_cut
-
 
 # TODO: Add exception with instructions if data not available
 def get_EEG_dataset(path, num_individuals, k_lead=3, num_time_steps=30000, **kwargs):
