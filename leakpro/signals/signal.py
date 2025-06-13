@@ -257,6 +257,12 @@ def get_seasonality_coefficients(Y):
     return C
 
 class Seasonality(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the seasonality loss of a time series model.
+    We define this as the distance (L2 norm) between the true and predicted values for the seasonality component.
+    """
+
     def __call__(
         self:Self,
         models: List[Model],
@@ -295,6 +301,12 @@ def get_trend_coefficients(Y, polynomial_degree=4):
     return A
     
 class Trend(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the trend loss of a time series model.
+    We define this as the distance (L2 norm) between the true and predicted values for the trend component.
+    """
+
     def __call__(
         self:Self,
         models: List[Model],
@@ -325,6 +337,11 @@ class Trend(Signal):
         return np.array(results)
 
 class MSE(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the Mean Squared Error (MSE) of a time series model.
+    """
+
     def __call__(
         self:Self,
         models: List[Model],
@@ -353,6 +370,11 @@ class MSE(Signal):
         return np.array(results)
 
 class MAE(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the Mean Average Error (MAE) of a time series model.
+    """
+
     def __call__(
         self:Self,
         models: List[Model],
@@ -381,6 +403,11 @@ class MAE(Signal):
         return np.array(results)
 
 class SMAPE(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the Symmetric Mean Absolute Percentage Error (SMAPE) of a time series model.
+    """
+
     def __call__(
         self:Self,
         models: List[Model],
@@ -415,6 +442,12 @@ class SMAPE(Signal):
 
     
 class RescaledSMAPE(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the Rescaled SMAPE of a time series model.
+    We define this by applying a logit-like transformation to the original SMAPE, mapping the signal range from [0, 1] to an undbounded scale.
+    """
+
     def __call__(
         self:Self,
         models: List[Model],
@@ -449,6 +482,16 @@ class RescaledSMAPE(Signal):
         return np.array(results)
 
 class TS2Vec(Signal):
+    """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
+
+    This particular class is used to get the TS2Vec loss of a time series model.
+    We define this as the distance (L2 norm) between the TS2Vec representations of the true and predicted values.
+
+    TS2Vec (https://arxiv.org/abs/2106.10466) is an unsupervised representation learning method for time series. 
+    Here, we train a TS2Vec model on the shadow population’s target time series. 
+    This representation model is then used to encode both predicted and true sequences, and we compute the per-sample distance between their representations.
+    """
+
     def __call__(
         self:Self,
         models: List[Model],
