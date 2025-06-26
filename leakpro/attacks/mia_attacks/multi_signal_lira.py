@@ -78,7 +78,8 @@ class AttackMSLiRA(AbstractMIA):
         """Return a description of the attack."""
         title_str = "Multi-Signal Likelihood Ratio Attack"
 
-        reference_str = "Original LiRA: Carlini N, et al. Membership Inference Attacks From First Principles"
+        reference_str = "Johansson N., & Olsson T. Privacy Risks in Time Series Models:  \
+        Membership Inference in Deep Learning-Based Time Series Forecasting Models. 2025."
 
         summary_str = "LiRA is a membership inference attack based on rescaled logits of a black-box model. \
         The multi-signal version extends LiRA to attack a model based on multiple signals extracted from the outputs."
@@ -99,7 +100,7 @@ class AttackMSLiRA(AbstractMIA):
             "detailed": detailed_str,
         }
 
-    def prepare_attack(self:Self)->None:
+    def prepare_attack(self:Self) -> None:
         """Prepares data to obtain metric on the target model and dataset, using signals computed on the auxiliary model/dataset.
 
         It selects a balanced subset of data samples from in-group and out-group members

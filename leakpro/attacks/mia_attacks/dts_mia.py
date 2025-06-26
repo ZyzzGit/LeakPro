@@ -84,7 +84,8 @@ class AttackDTS(AbstractMIA):
         """Return a description of the attack."""
         title_str = "Deep Time Series Attack"
 
-        reference_str = "Johansson N., & Olsson T. (2025). Privacy risks in time series models: Membership inference in deep learning-based time series forecasting models"
+        reference_str = "Johansson N., & Olsson T. Privacy Risks in Time Series Models:  \
+        Membership Inference in Deep Learning-Based Time Series Forecasting Models. 2025."
 
         summary_str = "DTS-MIA is a membership inference attack based on predictions of a black-box model"
 
@@ -150,7 +151,7 @@ class AttackDTS(AbstractMIA):
         X = torch.stack(mi_features, dim=0)
         return X
 
-    def prepare_attack(self:Self)->None:
+    def prepare_attack(self:Self) -> None:
         """Prepares data to obtain metric on the target model and dataset, using MI classifier trained on the auxiliary model/dataset.
 
         It selects a balanced subset of data samples from in-group and out-group members
