@@ -1,22 +1,23 @@
 """Implementation of the Deep Time Series attack."""
 
+from typing import Any, Dict, Literal
+
 import numpy as np
 import torch
-
 from pydantic import BaseModel, Field, model_validator
 from sklearn.model_selection import train_test_split
-from torch.utils.data import Subset, DataLoader, TensorDataset
+from torch.utils.data import DataLoader, Subset, TensorDataset
 from torch.utils.data.sampler import SequentialSampler
 from tqdm import tqdm
-from typing import Literal, Dict, Any
 
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
-from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.attacks.utils.dts_mia_classifier.model_api import MIClassifier
+from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.mia_handler import MIAHandler
 from leakpro.reporting.mia_result import MIAResult
 from leakpro.utils.import_helper import Self
 from leakpro.utils.logger import logger
+
 
 class AttackDTS(AbstractMIA):
     """Implementation of the Deep Time Series attack."""
@@ -26,15 +27,15 @@ class AttackDTS(AbstractMIA):
 
         num_shadow_models: int = Field(default=16, ge=1, description="Number of shadow models")
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
-        online: bool = Field(default=True, description="Online vs offline attack: whether the shadow models' training data includes the audit set (online) or excludes it (offline)")
-        clf_model: Literal["LSTM", "InceptionTime"] = Field(default="LSTM", description="MI classifier model to use [LSTM, InceptionTime]")
-        clf_model_kwargs: Dict[str, Any] = Field(default=None, description="Dictionary of additional keyword arguments passed to the classifier model constructor. See LeakPro/leakpro/attacks/utils/clf_mia_classifier/models for possible/default arguments")
-        clf_data_fraction: float = Field(default=0.1, ge=0.0, le=1.0, description="Fraction of shadow population to predict for each shadow model and append to the MI classifier data set")
+        online: bool = Field(default=True, description="Online vs offline attack: whether the shadow models' training data includes the audit set (online) or excludes it (offline)")  # noqa: E501
+        clf_model: Literal["LSTM", "InceptionTime"] = Field(default="LSTM", description="MI classifier model to use [LSTM, InceptionTime]")  # noqa: E501
+        clf_model_kwargs: Dict[str, Any] = Field(default=None, description="Dictionary of additional keyword arguments passed to the classifier model constructor. See LeakPro/leakpro/attacks/utils/clf_mia_classifier/models for possible/default arguments")  # noqa: E501
+        clf_data_fraction: float = Field(default=0.1, ge=0.0, le=1.0, description="Fraction of shadow population to predict for each shadow model and append to the MI classifier data set")  # noqa: E501
         clf_batch_size: int = Field(default=128, ge=0, description="The batch size to use when training MI classifier")
         clf_max_epochs: int = Field(default=32, ge=1, description="The maximum amount of epochs when training MI classifier")
-        clf_val_fraction: float = Field(default=0.2, ge=0.05, le=0.5, description="Fraction of the MI classifier data set to use as validation for early stopping") 
-        clf_early_stopping_patience: int = Field(default=2, ge=0, description="The maximum allowed number of epochs without validation loss improvement when training MI classifier")
-        clf_fit_verbose: Literal[0, 1] = Field(default=0, description="The amount of information to print when training the MI classifier")
+        clf_val_fraction: float = Field(default=0.2, ge=0.05, le=0.5, description="Fraction of the MI classifier data set to use as validation for early stopping")  # noqa: E501
+        clf_early_stopping_patience: int = Field(default=2, ge=0, description="The maximum allowed number of epochs without validation loss improvement when training MI classifier")  # noqa: E501
+        clf_fit_verbose: Literal[0, 1] = Field(default=0, description="The amount of information to print when training the MI classifier")  # noqa: E501
 
         @model_validator(mode="after")
         def check_num_shadow_models_if_online(self) -> Self:
@@ -53,7 +54,7 @@ class AttackDTS(AbstractMIA):
                 raise ValueError("When online is True, num_shadow_models must be >= 2")
             return self
 
-    def __init__(self:Self,
+    def __init__(self: Self,
                  handler: MIAHandler,
                  configs: dict
                  ) -> None:
@@ -80,7 +81,7 @@ class AttackDTS(AbstractMIA):
 
         self.shadow_models = []
 
-    def description(self:Self) -> dict: 
+    def description(self: Self) -> dict:
         """Return a description of the attack."""
         title_str = "Deep Time Series Attack"
 
@@ -92,9 +93,11 @@ class AttackDTS(AbstractMIA):
         detailed_str = "The attack is executed according to: \
             1. A fraction of the target model dataset is sampled to be included (in-) or excluded (out-) \
             from the shadow model training dataset. \
-            2. Shadow models' (raw) predictions and corresponding target, together with the label (in/out) are used to construct MI classification samples. \
+            2. Shadow models' (raw) predictions and corresponding target, together with the label (in/out) are used to construct \
+            MIC samples. \
             3. A time series binary classification model is trained on the extracted MI classification data. \
-            4. The MI classifier is applied over the target model outputs, and the resulting confidences are used to classify in-members and out-members. \
+            4. The MI classifier is applied over the target model outputs, and the resulting confidences are used to classify \
+            in-members and out-members. \
             5. The attack is evaluated on an audit dataset to determine the attack performance."
 
         return {
@@ -103,8 +106,9 @@ class AttackDTS(AbstractMIA):
             "summary": summary_str,
             "detailed": detailed_str,
         }
-    
-    def create_MI_classifier_dataset(self:Self)->TensorDataset:
+
+    def create_MIC_dataset(self: Self)->TensorDataset:  # noqa: N802
+        """Construct and return a dataset for training the MIC model."""
         mi_features = []
         mi_labels = []
 
@@ -113,13 +117,13 @@ class AttackDTS(AbstractMIA):
 
         for _, (shadow_model, in_indices) in tqdm(enumerate(zip(self.shadow_models, shadow_models_in_indices)),
                                                     total=len(self.shadow_models),
-                                                    desc=f"Constructing MI classifier dataset from {self.num_shadow_models} shadow models' forecasts"):
+                                                    desc=f"Constructing MI classifier dataset from {self.num_shadow_models} shadow models' forecasts"):  # noqa: E501
 
             # Select specified fraction of random indices from audit population
             data_size = int(len(self.attack_data_indices)*self.clf_data_fraction)
             data_indices = np.random.choice(self.attack_data_indices, data_size, replace=False)
             data_loader = self.handler.get_dataloader(data_indices, batch_size=self.clf_batch_size, shuffle=False)
-            assert isinstance(data_loader.sampler, SequentialSampler), "DataLoader must not shuffle data to maintain order of indices"
+            assert isinstance(data_loader.sampler, SequentialSampler), "DataLoader must not shuffle data to maintain order of indices"  # noqa: E501
 
             # Inference and MI data collection
             with torch.no_grad():
@@ -133,11 +137,12 @@ class AttackDTS(AbstractMIA):
             mi_labels.append(mask)
 
         # Concatenate and return dataset
-        X = torch.stack(mi_features, dim=0)
+        X = torch.stack(mi_features, dim=0)  # noqa: N806
         y = torch.cat(mi_labels, dim=0).float().view(-1, 1)
         return TensorDataset(X, y)
-    
-    def get_target_model_MI_features(self: Self) -> torch.Tensor:
+
+    def get_target_model_MIC_features(self: Self) -> torch.Tensor:  # noqa: N802
+        """Get the MIC features from the target model on the audit set."""
         mi_features = []
         data_loader = self.handler.get_dataloader(self.audit_data_indices, batch_size=self.clf_batch_size, shuffle=False)
         assert isinstance(data_loader.sampler, SequentialSampler), "DataLoader must not shuffle data to maintain order of indices"
@@ -148,11 +153,10 @@ class AttackDTS(AbstractMIA):
                 preds = self.target_model.get_logits(x)
                 mi_features.extend(torch.cat((y, torch.tensor(preds)), dim=-1))
 
-        X = torch.stack(mi_features, dim=0)
-        return X
+        return torch.stack(mi_features, dim=0)
 
-    def prepare_attack(self:Self) -> None:
-        """Prepares data to obtain metric on the target model and dataset, using MI classifier trained on the auxiliary model/dataset.
+    def prepare_attack(self: Self) -> None:
+        """Prepares data to obtain metric on the target model and dataset, using MIC model trained on the auxiliary model/dataset.
 
         It selects a balanced subset of data samples from in-group and out-group members
         of the audit dataset, prepares the data for evaluation, and extracts MI classifier data
@@ -205,14 +209,14 @@ class AttackDTS(AbstractMIA):
                 logger.info("This is not an offline attack!")
 
         # Get MI classifier data and target errors
-        self.mi_classifier_data = self.create_MI_classifier_dataset()
+        self.mi_classifier_data = self.create_MIC_classifier_dataset()
         self.target_features = self.get_target_model_MI_features()
 
-    def run_attack(self:Self) -> MIAResult:
+    def run_attack(self: Self) -> MIAResult:
         """Runs the attack on the target model and dataset and assess privacy risks or data leakage.
 
         This method evaluates how the target model's output (predicted time series) for a specific dataset
-        compares to the output of shadow models to determine if the dataset was part of the model's training data or not. 
+        compares to the output of shadow models to determine if the dataset was part of the model's training data or not.
         This is approximated by training and assessing a deep MI classifier model.
 
         Returns
@@ -235,10 +239,16 @@ class AttackDTS(AbstractMIA):
         # Init and train MI Classifier
         _, seq_len, num_variables = self.mi_classifier_data.tensors[0].shape
         mi_classifier = MIClassifier(seq_len, num_variables, self.clf_model, self.clf_model_kwargs)
-        mi_classifier.fit(train_loader, val_loader, self.clf_max_epochs, self.clf_early_stopping_patience, verbose=self.clf_fit_verbose)
+        mi_classifier.fit(
+            train_loader,
+            val_loader,
+            self.clf_max_epochs,
+            self.clf_early_stopping_patience,
+            verbose=self.clf_fit_verbose
+        )
 
         # Iterate over all target samples and get MI Classifier predictions as MI scores
-        score = mi_classifier.predict(self.target_features, self.clf_batch_size)    # Values between 0 and 1 since classifier utilizes sigmoid output
+        score = mi_classifier.predict(self.target_features, self.clf_batch_size)    # Values between 0 and 1 since classifier utilizes sigmoid output activation  # noqa: E501
         score = score.flatten()
 
         # Split the score array into two parts based on membership: in (training) and out (non-training)
