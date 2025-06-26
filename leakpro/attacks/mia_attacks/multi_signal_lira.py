@@ -1,11 +1,11 @@
 """Implementation of a multi-signal version of the LiRA attack."""
 
-import numpy as np
+from typing import Literal
 
+import numpy as np
 from pydantic import BaseModel, Field, model_validator
 from scipy.stats import norm
 from tqdm import tqdm
-from typing import Literal
 
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
@@ -27,7 +27,7 @@ class AttackMSLiRA(AbstractMIA):
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
         online: bool = Field(default=False, description="Online vs offline attack")
         var_calculation: Literal["carlini", "individual_carlini", "fixed"] = Field(default="carlini", description="Variance estimation method to use [carlini, individual_carlini, fixed]")  # noqa: E501
-        std_eps: float = Field(default=1e-30, ge=0.0, le=0.001, description="Small value to add to the standard deviations when estimating Gaussians (for numerical stability).")
+        std_eps: float = Field(default=1e-30, ge=0.0, le=0.001, description="Small value to add to the standard deviations when estimating Gaussians (for numerical stability).")  # noqa: E501
 
         @model_validator(mode="after")
         def check_num_shadow_models_if_online(self) -> Self:
@@ -86,7 +86,8 @@ class AttackMSLiRA(AbstractMIA):
         detailed_str = "The attack is executed according to: \
             1. A fraction of the target model dataset is sampled to be included (in-) or excluded (out-) \
             from the shadow model training dataset. \
-            2. The attack signals are used to estimate Gaussian distributions for in and out members, independently for each signal. \
+            2. The attack signals are used to estimate Gaussian distributions for in and out members, \
+            independently for each signal. \
             3. Probabilities are multiplied across the different signal distributions to obtain a joint membership probability. \
             4. The thresholds are used to classify in-members and out-members. \
             5. The attack is evaluated on an audit dataset to determine the attack performance."
@@ -113,7 +114,7 @@ class AttackMSLiRA(AbstractMIA):
         self.attack_data_indices = self.sample_indices_from_population(include_aux_indices = not self.online,
                                                                        include_train_indices = self.online,
                                                                        include_test_indices = self.online)
-        
+
         self.shadow_model_indices = ShadowModelHandler().create_shadow_models(num_models = self.num_shadow_models,
                                                                               shadow_population =  self.attack_data_indices,
                                                                               training_fraction = self.training_data_fraction,
@@ -159,7 +160,7 @@ class AttackMSLiRA(AbstractMIA):
         shadow_models_signals = []
         target_model_signals = []
         for signal, signal_name in zip(self.signals, self.signal_names):
-            ts2vec_params = ([self.attack_data_indices] if signal_name == 'TS2VecLoss' else [])
+            ts2vec_params = ([self.attack_data_indices] if signal_name == "TS2VecLoss" else [])
 
             logger.info(f"Calculating {signal_name} for all {self.num_shadow_models} shadow models")
             shadow_models_signals.append(np.swapaxes(signal(self.shadow_models,
@@ -172,11 +173,11 @@ class AttackMSLiRA(AbstractMIA):
                                                             self.handler,
                                                             self.audit_data_indices,
                                                             *ts2vec_params), 0, 1).squeeze())
-            
+
         # Stack signals to get shape (n_audit_points, n_shadow_models, n_signals)
         self.shadow_models_signals = np.stack(shadow_models_signals, axis=-1)
         self.target_model_signals = np.stack(target_model_signals, axis=-1)
-    
+
     def get_std(self:Self, signals: list, mask: list, is_in: bool, var_calculation: str) -> np.ndarray:
         """A function to define what method to use for calculating variance for LiRA."""
 
@@ -185,14 +186,14 @@ class AttackMSLiRA(AbstractMIA):
             return self._fixed_variance(signals, mask, is_in)
 
         # Variance calculation as in the paper ( Membership Inference Attacks From First Principles )
-        elif var_calculation == "carlini":
+        elif var_calculation == "carlini":  # noqa: RET505
             return self._carlini_variance(signals, mask, is_in)
 
         # Variance calculation as in the paper ( Membership Inference Attacks From First Principles )
         #   but check IN and OUT samples individualy
         elif var_calculation == "individual_carlini":
             return self._individual_carlini(signals, mask, is_in)
-        
+
         # Unknown variance calculation
         else:
             raise NotImplementedError("Unknown variance calculation specified.")
@@ -232,7 +233,7 @@ class AttackMSLiRA(AbstractMIA):
         n_audit_samples = self.shadow_models_signals.shape[0]
         score = np.zeros(n_audit_samples)  # List to hold the computed probability scores for each sample
 
-        shadow_models_signals_flattened = self.shadow_models_signals.reshape(-1, self.shadow_models_signals.shape[-1])  # flatten only first two dimensions (samples, shadow models)
+        shadow_models_signals_flattened = self.shadow_models_signals.reshape(-1, self.shadow_models_signals.shape[-1])  # flatten only first two dimensions (samples, shadow models)  # noqa: E501
         self.fixed_in_stds = self.get_std(shadow_models_signals_flattened, self.in_indices_masks.flatten(), True, "fixed")
         self.fixed_out_stds = self.get_std(shadow_models_signals_flattened, (~self.in_indices_masks).flatten(), False, "fixed")
 
@@ -247,7 +248,7 @@ class AttackMSLiRA(AbstractMIA):
             out_means = np.mean(shadow_models_signals[~mask], axis=0)
             out_stds = self.get_std(shadow_models_signals, ~mask, False, self.var_calculation)
             out_prs = norm.logpdf(target_signals, out_means, out_stds + self.std_eps)
-        
+
             if self.online:
                 # Compute IN statistics
                 in_means = np.mean(shadow_models_signals[mask], axis=0)
