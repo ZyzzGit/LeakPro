@@ -27,7 +27,7 @@ class AttackDTS(AbstractMIA):
         num_shadow_models: int = Field(default=16, ge=1, description="Number of shadow models")
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
         online: bool = Field(default=True, description="Online vs offline attack: whether the shadow models' training data includes the audit set (online) or excludes it (offline)")
-        clf_model: Literal["LSTM", "InceptionTimeS"] = Field(default="LSTM", description="MI classifier model to use [LSTM, InceptionTime]")    # TODO: Rename IT after new runs
+        clf_model: Literal["LSTM", "InceptionTime"] = Field(default="LSTM", description="MI classifier model to use [LSTM, InceptionTime]")
         clf_model_kwargs: Dict[str, Any] = Field(default=None, description="Dictionary of additional keyword arguments passed to the classifier model constructor. See LeakPro/leakpro/attacks/utils/clf_mia_classifier/models for possible/default arguments")
         clf_data_fraction: float = Field(default=0.1, ge=0.0, le=1.0, description="Fraction of shadow population to predict for each shadow model and append to the MI classifier data set")
         clf_batch_size: int = Field(default=128, ge=0, description="The batch size to use when training MI classifier")
