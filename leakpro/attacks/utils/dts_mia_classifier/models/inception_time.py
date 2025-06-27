@@ -7,7 +7,13 @@ Paper reference: Fawaz et al. InceptionTime: Finding AlexNet for Time Series Cla
 import torch
 from torch import nn
 
-DEFAULT_MAX_KERNEL_SIZE = 40
+
+def default_kernel_sizes(seq_length: int) -> list[int]:
+    """Gets the default convolutional kernel sizes.
+
+    Based on results from Fawaz et al., best filter length depending on the length of the input time series.
+    """
+    return [2, 4, 8] if seq_length < 81 else [10, 20, 40]
 
 class GlobalAveragePooling1D(nn.Module):
     """1D Global Average Pooling layer."""
@@ -42,26 +48,18 @@ class InceptionModule(nn.Module):
             bottleneck_size: int,
             in_channels: int,
             num_filters: int,
-            max_kernel_size: int,
-            fixed_kernel_sizes: list[int] = None
+            kernel_sizes: list[int]
         ) -> None:
         super().__init__()
+
         if use_bottleneck and in_channels > 1:
             self.input_layer = nn.Conv1d(in_channels, bottleneck_size, kernel_size=1, stride=1, padding="same", bias=False)
         else:
             self.input_layer = nn.Identity()
 
-        if fixed_kernel_sizes:
-            self.kernel_sizes = fixed_kernel_sizes  # Use custom kernel sizes if supplied
-        else:
-            self.kernel_sizes = [
-                k if k % 2 == 1 else k - 1  # Ensure odd kernel sizes for performance (not in original InceptionTime)
-                for k in [max_kernel_size // (2 ** i) for i in range(3)]
-            ]
-
         self.convs = nn.ModuleList()
         inception_in_channels = bottleneck_size if use_bottleneck else in_channels
-        for kernel_size in self.kernel_sizes:
+        for kernel_size in kernel_sizes:
             self.convs.append(
                 nn.Conv1d(inception_in_channels, num_filters, kernel_size=kernel_size, stride=1, padding="same", bias=False)
             )
@@ -69,7 +67,7 @@ class InceptionModule(nn.Module):
         self.max_pool = nn.MaxPool1d(kernel_size=3, stride=1, padding=1)    # padding=1 results in 'same' padding for kernel_size=3, stride=1  # noqa: E501
         self.mp_conv = nn.Conv1d(in_channels, num_filters , kernel_size=1, stride=1, padding="same", bias=False)
 
-        num_convs = len(fixed_kernel_sizes) + 1 if fixed_kernel_sizes else 4
+        num_convs = len(kernel_sizes) + 1
         num_channels_after_concat = num_filters * num_convs
         self.bnorm = nn.BatchNorm1d(num_channels_after_concat)
 
@@ -90,29 +88,27 @@ class InceptionTime(nn.Module):
     def __init__(
             self,
             in_channels: int,
+            seq_len: int,
             num_filters: int = 32,
             use_residual: bool = True,
             use_bottleneck: bool = True,
             bottleneck_size: int = 32,
             depth: int = 6,
-            max_kernel_size: int = DEFAULT_MAX_KERNEL_SIZE,
-            fixed_kernel_sizes: list[int] = None
+            kernel_sizes: list[int] = None
         ) -> None:
-        """By default inits with original InceptionTime params, however:
-
-        > while original InceptionModule utilizes 40, 20, respectively 10 kernel sizes, this implementation ensures only odd ones (39, 19, 9).
-        > max_kernel_size (see lines 44-46) may be overriden by fixed_kernel_sizes.
-        > fixed_kernel_sizes lets user specify exact list of kernel sizes to use in InceptionModule (warning: check that max kernel size do not exceed sequence length).
-        """  # noqa: D400, D415, E501
         super().__init__()
+
         self.use_residual = use_residual
 
-        num_inception_module_convs = len(fixed_kernel_sizes) + 1 if fixed_kernel_sizes else 4
+        if kernel_sizes is None:
+            kernel_sizes = default_kernel_sizes(seq_len)
+
+        num_inception_module_convs = len(kernel_sizes) + 1
         num_channels_after_concat = num_filters * num_inception_module_convs
 
         self.inception_modules = nn.ModuleList([
-            InceptionModule(use_bottleneck, bottleneck_size, in_channels, num_filters, max_kernel_size, fixed_kernel_sizes),
-            *[InceptionModule(use_bottleneck, bottleneck_size, num_channels_after_concat, num_filters, max_kernel_size, fixed_kernel_sizes) for _ in range(1, depth)]  # noqa: E501
+            InceptionModule(use_bottleneck, bottleneck_size, in_channels, num_filters, kernel_sizes),
+            *[InceptionModule(use_bottleneck, bottleneck_size, num_channels_after_concat, num_filters, kernel_sizes) for _ in range(1, depth)]  # noqa: E501
         ])
 
         if use_residual:

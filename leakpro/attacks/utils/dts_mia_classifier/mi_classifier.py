@@ -8,7 +8,7 @@ from torch import cuda, nn, optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from leakpro.attacks.utils.dts_mia_classifier.models.inception_time import DEFAULT_MAX_KERNEL_SIZE, InceptionTime
+from leakpro.attacks.utils.dts_mia_classifier.models.inception_time import InceptionTime
 from leakpro.attacks.utils.dts_mia_classifier.models.lstm_classifier import LSTMClassifier
 from leakpro.utils.logger import logger
 
@@ -31,27 +31,25 @@ class MIClassifier():
         self.device = torch.device("cuda" if cuda.is_available() else "cpu")
         model_kwargs = model_kwargs or {}
 
+        # Sanity check for InceptionTime
+        if model.lower() == "inceptiontime" and "kernel_sizes" in model_kwargs:
+            max_kernel_size = max(model_kwargs["kernel_sizes"])
+            if max_kernel_size > seq_len:
+                logger.warning(f"InceptionTime: Maximum kernel size ({max_kernel_size}) is greater than input sequence length ({seq_len}).")  # noqa: E501
+
         if model.lower() == "lstm":
-            self.model_class = LSTMClassifier
+            self.model = LSTMClassifier(
+                num_input_variables,
+                **model_kwargs
+            )
         elif model.lower() == "inceptiontime":
-            self.model_class = InceptionTime
+            self.model = InceptionTime(
+                num_input_variables,
+                seq_len,
+                **model_kwargs
+            )
         else:
             raise ValueError(f"Unknown model: {model}. Must be one of ['LSTM', 'InceptionTime'].")
-
-        # Sanity check for InceptionTime
-        if self.model_class == InceptionTime:
-            if "fixed_kernel_sizes" in model_kwargs:
-                max_kernel_size = max(model_kwargs["fixed_kernel_sizes"])   # fixed_kernel_sizes overrides max_kernel_size
-            else:
-                max_kernel_size = model_kwargs.get("max_kernel_size", DEFAULT_MAX_KERNEL_SIZE)
-
-            if max_kernel_size > seq_len:
-                logger.warning(f"InceptionTime: Maximum kernel size ({max_kernel_size}) is greater than input sequence length ({seq_len}). Consider changing max_kernel_size or specifying fixed_kernel_sizes.")  # noqa: E501
-
-        self.model = self.model_class(
-            num_input_variables,
-            **model_kwargs
-        )
 
     def fit(
             self,
