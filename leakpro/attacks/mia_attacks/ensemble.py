@@ -159,16 +159,16 @@ class AttackEnsemble(AbstractMIA):
             in_features = []
             out_features = []
             for signal, signal_name in zip(self.signals, self.signal_names):
-                ts2vec_params = ([self.attack_data_indices] if signal_name == 'TS2VecLoss' else [])
+                additional_params = ([self.attack_data_indices] if signal_name == 'TS2VecLoss' else [])
 
                 in_features.append(np.squeeze(signal([current_model],
                                                      self.handler,
                                                      in_indices,
-                                                     *ts2vec_params)))
+                                                     *additional_params)))
                 out_features.append(np.squeeze(signal([current_model],
                                                       self.handler,
                                                       out_indices,
-                                                      *ts2vec_params)))
+                                                      *additional_params)))
             in_features = np.swapaxes(np.array(in_features), 0, 1)
             out_features = np.swapaxes(np.array(out_features), 0, 1)
 
@@ -227,11 +227,11 @@ class AttackEnsemble(AbstractMIA):
 
         features = []
         for signal, signal_name in zip(self.signals, self.signal_names):
-            ts2vec_params = ([self.attack_data_indices] if signal_name == 'TS2VecLoss' else [])
+            additional_params = ([self.attack_data_indices] if signal_name == 'TS2VecLoss' else [])
             features.append(np.squeeze(signal([self.target_model],
                                               self.handler,
                                               self.audit_data_indices,
-                                              *ts2vec_params)))
+                                              *additional_params)))
         features = np.swapaxes(np.array(features), 0, 1)
         
         # Average membership score over all instances and models

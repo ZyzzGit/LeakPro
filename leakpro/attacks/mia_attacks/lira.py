@@ -118,7 +118,7 @@ class AttackLiRA(AbstractMIA):
                                                                        include_train_indices = self.online,
                                                                        include_test_indices = self.online)   
 
-        self.ts2vec_params = ([self.attack_data_indices] if self.signal_name == 'TS2VecLoss' else [])     
+        self.additional_params = ([self.attack_data_indices] if self.signal_name == 'TS2VecLoss' else [])     
 
         self.shadow_model_indices = ShadowModelHandler().create_shadow_models(num_models = self.num_shadow_models,
                                                                               shadow_population =  self.attack_data_indices,
@@ -165,14 +165,14 @@ class AttackLiRA(AbstractMIA):
         self.shadow_models_logits = np.swapaxes(self.signal(self.shadow_models,
                                                             self.handler,
                                                             self.audit_data_indices,
-                                                            *self.ts2vec_params), 0, 1).squeeze()
+                                                            *self.additional_params), 0, 1).squeeze()
 
         # Calculate logits for the target model
         logger.info("Calculating the logits for the target model")
         self.target_logits = np.swapaxes(self.signal([self.target_model],
                                                      self.handler,
                                                      self.audit_data_indices,
-                                                     *self.ts2vec_params), 0, 1).squeeze()
+                                                     *self.additional_params), 0, 1).squeeze()
 
         # Using Memorizationg boosting
         if self.memorization:
