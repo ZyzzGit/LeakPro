@@ -11,7 +11,7 @@ from torch.utils.data.sampler import SequentialSampler
 from tqdm import tqdm
 
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
-from leakpro.attacks.utils.dts_mia_classifier.model_api import MIClassifier
+from leakpro.attacks.utils.dts_mia_classifier.mi_classifier import MIClassifier
 from leakpro.attacks.utils.shadow_model_handler import ShadowModelHandler
 from leakpro.input_handler.mia_handler import MIAHandler
 from leakpro.reporting.mia_result import MIAResult
@@ -28,8 +28,8 @@ class AttackDTS(AbstractMIA):
         num_shadow_models: int = Field(default=16, ge=1, description="Number of shadow models")
         training_data_fraction: float = Field(default=0.5, ge=0.0, le=1.0, description="Part of available attack data to use for shadow models")  # noqa: E501
         online: bool = Field(default=True, description="Online vs offline attack: whether the shadow models' training data includes the audit set (online) or excludes it (offline)")  # noqa: E501
-        clf_model: Literal["LSTM", "InceptionTime"] = Field(default="LSTM", description="MI classifier model to use [LSTM, InceptionTime]")  # noqa: E501
-        clf_model_kwargs: Dict[str, Any] = Field(default=None, description="Dictionary of additional keyword arguments passed to the classifier model constructor. See LeakPro/leakpro/attacks/utils/clf_mia_classifier/models for possible/default arguments")  # noqa: E501
+        clf_model: Literal["LSTM", "InceptionTime"] = Field(default="LSTM", description="MIC model to use [LSTM, InceptionTime]")  # noqa: E501
+        clf_model_kwargs: Dict[str, Any] = Field(default=None, description="Dictionary of additional keyword arguments passed to the classifier model constructor. See LeakPro/leakpro/attacks/utils/dts_mia_classifier/models for possible/default arguments")  # noqa: E501
         clf_data_fraction: float = Field(default=0.1, ge=0.0, le=1.0, description="Fraction of shadow population to predict for each shadow model and append to the MI classifier data set")  # noqa: E501
         clf_batch_size: int = Field(default=128, ge=0, description="The batch size to use when training MI classifier")
         clf_max_epochs: int = Field(default=32, ge=1, description="The maximum amount of epochs when training MI classifier")
