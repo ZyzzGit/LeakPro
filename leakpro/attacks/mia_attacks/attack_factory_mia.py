@@ -3,7 +3,7 @@
 
 from leakpro.attacks.mia_attacks.abstract_mia import AbstractMIA
 from leakpro.attacks.mia_attacks.attack_p import AttackP
-from leakpro.attacks.mia_attacks.dts_mia import AttackDTS
+from leakpro.attacks.mia_attacks.dts import AttackDTS
 from leakpro.attacks.mia_attacks.ensemble import AttackEnsemble
 from leakpro.attacks.mia_attacks.HSJ import AttackHopSkipJump
 from leakpro.attacks.mia_attacks.lira import AttackLiRA
