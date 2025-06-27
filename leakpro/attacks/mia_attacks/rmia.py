@@ -138,8 +138,8 @@ class AttackRMIA(AbstractMIA):
         self.attack_data_indices = self.sample_indices_from_population(include_aux_indices = not self.online,
                                                                        include_train_indices = self.online,
                                                                        include_test_indices = self.online)
-        
-        self.additional_params = ([self.attack_data_indices] if self.signal_name == 'TS2VecLoss' else [])
+
+        self.additional_params = ([self.attack_data_indices] if self.signal_name == "TS2Vec" else [])
 
         # train shadow models
         logger.info(f"Check for {self.num_shadow_models} shadow models (dataset: {len(self.attack_data_indices)} points)")

@@ -159,7 +159,7 @@ class AttackEnsemble(AbstractMIA):
             in_features = []
             out_features = []
             for signal, signal_name in zip(self.signals, self.signal_names):
-                additional_params = ([self.attack_data_indices] if signal_name == 'TS2VecLoss' else [])
+                additional_params = ([self.attack_data_indices] if signal_name == "TS2Vec" else [])
 
                 in_features.append(np.squeeze(signal([current_model],
                                                      self.handler,
@@ -227,7 +227,7 @@ class AttackEnsemble(AbstractMIA):
 
         features = []
         for signal, signal_name in zip(self.signals, self.signal_names):
-            additional_params = ([self.attack_data_indices] if signal_name == 'TS2VecLoss' else [])
+            additional_params = ([self.attack_data_indices] if signal_name == "TS2Vec" else [])
             features.append(np.squeeze(signal([self.target_model],
                                               self.handler,
                                               self.audit_data_indices,

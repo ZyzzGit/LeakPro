@@ -118,7 +118,7 @@ class AttackLiRA(AbstractMIA):
                                                                        include_train_indices = self.online,
                                                                        include_test_indices = self.online)   
 
-        self.additional_params = ([self.attack_data_indices] if self.signal_name == 'TS2VecLoss' else [])     
+        self.additional_params = ([self.attack_data_indices] if self.signal_name == "TS2Vec" else [])
 
         self.shadow_model_indices = ShadowModelHandler().create_shadow_models(num_models = self.num_shadow_models,
                                                                               shadow_population =  self.attack_data_indices,

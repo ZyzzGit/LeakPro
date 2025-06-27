@@ -161,7 +161,7 @@ class AttackMSLiRA(AbstractMIA):
         shadow_models_signals = []
         target_model_signals = []
         for signal, signal_name in zip(self.signals, self.signal_names):
-            additional_params = ([self.attack_data_indices] if signal_name == "TS2VecLoss" else [])
+            additional_params = ([self.attack_data_indices] if signal_name == "TS2Vec" else [])
 
             logger.info(f"Calculating {signal_name} for all {self.num_shadow_models} shadow models")
             shadow_models_signals.append(np.swapaxes(signal(self.shadow_models,

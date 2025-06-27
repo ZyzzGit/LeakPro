@@ -94,7 +94,7 @@ class MIClassifier():
             train_loss /= len(train_loader)
             train_acc = correct / total
 
-            val_loss, val_acc = self.evaluate(val_loader, criterion, self.device)
+            val_loss, val_acc = self.evaluate(val_loader, criterion)
 
             if verbose > 0:
                 logger.info(f"Epoch {i+1}: train_loss={train_loss:.4f}, train_acc={train_acc:.4f}, val_loss={val_loss:.4f}, val_acc={val_acc:.4f}")  # noqa: E501
@@ -113,7 +113,7 @@ class MIClassifier():
     def evaluate(
             self,
             loader: DataLoader,
-            criterion: nn._Loss
+            criterion: nn.Module
         ) -> tuple[float, float]:
         """Evaluate MIC model on supplied data under specified loss criterion."""
 
