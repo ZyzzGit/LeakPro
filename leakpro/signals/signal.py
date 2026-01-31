@@ -2,18 +2,20 @@
 
 from abc import ABC, abstractmethod
 
+import os
 import numpy as np
 from numpy.fft import fft
 from numpy.linalg import inv, norm
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SequentialSampler
 from tqdm import tqdm
+from leakpro.utils.save_load import hash_model
 
+from leakpro.utils.logger import logger
 from leakpro.input_handler.abstract_input_handler import AbstractInputHandler
 from leakpro.signals.signal_extractor import Model
 from leakpro.signals.utils.get_TS2Vec import get_ts2vec_model
 from leakpro.utils.import_helper import List, Optional, Self, Tuple
-
 
 class Signal(ABC):
     """Abstract class, representing any type of signal that can be obtained from a Model and/or a Dataset."""
@@ -451,7 +453,7 @@ class SMAPE(Signal):
             results.append(smape_loss)
         return np.array(results)
 
-
+    
 class RescaledSMAPE(Signal):
     """Used to represent any type of signal that can be obtained from a Model and/or a Dataset.
 

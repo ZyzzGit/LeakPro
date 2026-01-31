@@ -169,7 +169,8 @@ class AttackDTS(AbstractMIA):
         for both shadow models (full data) and the target model (features only, no labels).
         """
 
-        self.attack_data_indices = self.sample_indices_from_population(include_train_indices = self.online,
+        self.attack_data_indices = self.sample_indices_from_population(include_aux_indices = not self.online,
+                                                                       include_train_indices = self.online,
                                                                        include_test_indices = self.online)
 
         self.shadow_model_indices = ShadowModelHandler().create_shadow_models(num_models = self.num_shadow_models,

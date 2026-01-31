@@ -187,8 +187,21 @@ class MIAHandler:
         data = self.population.data[dataset_indices]
         targets = self.population.targets[dataset_indices]
 
-        params = {} if params is None else params
-        return self.UserDataset(data, targets, **params)
+        #params = {} if params is None else params
+        #return self.UserDataset(data, targets, **params)
+        params = {
+            "scaler": self.population.scaler,
+            "stride": self.population.stride,
+            "lookback": self.population.lookback,
+            "horizon": self.population.horizon,
+            "num_variables": self.population.num_variables,
+            "individual_indices": self.population.individual_indices,   
+            "num_individuals": self.population.num_individuals, 
+            "samples_per_individual": self.population.samples_per_individual,
+            "val_set": self.population.val_set,   
+            "num_val_individuals": self.population.num_val_individuals
+        }   # TODO: Should obviously not be hard coded but 2 tired at this
+        return self.UserDataset(data, targets, **params)    
 
     def get_dataloader(self: Self,
                        dataset_indices: np.ndarray,
@@ -302,5 +315,15 @@ class MIAHandler:
 
         if optimizer_cls is None:
             raise ValueError(f"Optimizer {self.name} not found in torch.optim")
+        
+        # Get valid constructor argument names for given optimizer class
+        valid_args = {
+            k for k in inspect.signature(optimizer_cls.__init__).parameters.keys()
+        }
+        
+        # Filter params to only include valid ones
+        filtered_params = {
+            k: v for k, v in optimizer_config.params.items() if k in valid_args
+        }
 
-        return optimizer_cls(model.parameters(), **optimizer_config.params)
+        return optimizer_cls(model.parameters(), **filtered_params)
